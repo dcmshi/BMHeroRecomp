@@ -154,10 +154,15 @@ set (SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/rom_decompression.cpp
 
     ${CMAKE_SOURCE_DIR}/rsp/n_aspMain.cpp
+
+    ${CMAKE_SOURCE_DIR}/lib/bmhero-arena/src/arena/arena_sim.c
+    ${CMAKE_SOURCE_DIR}/src/arena_bridge/arena_bridge.cpp
 )
 
 target_include_directories(BMHeroRecompiled PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lib/bmhero-arena/src
+    ${CMAKE_SOURCE_DIR}/src/arena_bridge
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty/sse2neon
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib
