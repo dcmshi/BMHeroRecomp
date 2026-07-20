@@ -43,6 +43,7 @@
 #include "banjo_launcher.h"
 #include "recomp_data.h"
 #include "arena_bridge.h"
+#include "librecomp/game.hpp"
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -575,6 +576,20 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     );
 
     game_options_menu->add_default_options();
+
+    // A1.1b: Battle mode entry — set the native battle flag, then launch like
+    // Start Game. (Forced warp to a dedicated arena map is A1.1b-ii.)
+    game_options_menu->add_option("Battle", []() {
+        std::u8string gid = supported_games[0].game_id;
+        if (recomp::is_rom_valid(gid)) {
+            arena_bridge_set_battle_mode(1);
+            recomp::start_game(gid, {});
+            recompui::hide_all_contexts();
+        }
+        // No ROM loaded yet: no-op. Load the ROM once via Start Game first;
+        // the recomp persists the path, so Battle works on later launches.
+    });
+
     game_options_menu->set_width(30, recompui::Unit::Percent);
 
     for (auto option : game_options_menu->get_options()) {
