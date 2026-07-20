@@ -11,6 +11,7 @@ namespace {
     ArenaState g_state;
     uint32_t   g_calls = 0;
     std::FILE* g_log = nullptr;   /* persistent proof evidence, agent-readable */
+    bool       g_battle_mode = false;
 
     void proof(const char* fmt, unsigned a, unsigned b) {
         std::printf(fmt, a, b);
@@ -31,6 +32,16 @@ extern "C" void arena_bridge_tick(void) {
     const ArenaInput neutral[ARENA_MAX_PLAYERS] = {0, 0, 0, 0};
     arena_tick(&g_state, neutral);
     if ((++g_calls % 60u) == 0u) {
-        proof("[arena] tick %u hash %08x\n", g_state.tick, arena_hash(&g_state));
+        proof(g_battle_mode ? "[arena] BATTLE MODE tick %u hash %08x\n"
+                            : "[arena] tick %u hash %08x\n",
+              g_state.tick, arena_hash(&g_state));
     }
+}
+
+extern "C" void arena_bridge_set_battle_mode(int on) {
+    g_battle_mode = (on != 0);
+    std::printf("[arena] battle mode -> %s\n", g_battle_mode ? "ON" : "OFF");
+    std::fflush(stdout);
+    if (g_log) { std::fprintf(g_log, "[arena] battle mode -> %s\n",
+                              g_battle_mode ? "ON" : "OFF"); std::fflush(g_log); }
 }

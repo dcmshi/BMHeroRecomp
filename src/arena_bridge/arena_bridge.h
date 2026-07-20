@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 void arena_bridge_tick(void);   /* call once per VI/frame */
+void arena_bridge_set_battle_mode(int on);   /* menu sets this; tick reads it */
 #ifdef __cplusplus
 }
 #endif
