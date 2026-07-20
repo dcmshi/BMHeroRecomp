@@ -42,6 +42,7 @@
 #include "banjo_game.h"
 #include "banjo_launcher.h"
 #include "recomp_data.h"
+#include "arena_bridge.h"
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -606,6 +607,12 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
 
 #define REGISTER_FUNC(name) recomp::overlays::register_base_export(#name, name)
 
+// A1.1a: tick the arena sim once per VI alongside the existing rumble update.
+static void arena_vi_callback() {
+    recompinput::update_rumble();
+    arena_bridge_tick();
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -769,7 +776,7 @@ int main(int argc, char** argv) {
     };
 
     ultramodern::events::callbacks_t thread_callbacks{
-        .vi_callback = recompinput::update_rumble,
+        .vi_callback = arena_vi_callback,
         .gfx_init_callback = nullptr,
     };
 
