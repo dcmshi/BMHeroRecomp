@@ -157,6 +157,7 @@ set (SOURCES
 
     ${CMAKE_SOURCE_DIR}/lib/bmhero-arena/src/arena/arena_sim.c
     ${CMAKE_SOURCE_DIR}/src/arena_bridge/arena_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/arena_bridge/arena_bridge_export.cpp
 )
 
 target_include_directories(BMHeroRecompiled PRIVATE
