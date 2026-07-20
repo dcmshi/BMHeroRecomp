@@ -9,6 +9,11 @@ extern "C" {
 void arena_bridge_tick(void);   /* call once per VI/frame */
 void arena_bridge_set_battle_mode(int on);   /* menu sets this; tick reads it */
 int  arena_bridge_battle_active(void);        /* plain accessor for the export shim */
+void arena_bridge_tick_input(int sx, int sy, int jump, int bomb);  /* tick player 0 */
+float arena_get_player_x(int i);
+float arena_get_player_y(int i);
+float arena_get_player_z(int i);
+float arena_get_player_yaw_deg(int i);
 #ifdef __cplusplus
 }
 #endif

@@ -45,6 +45,11 @@
 #include "arena_bridge.h"
 #include "librecomp/game.hpp"
 extern "C" void arena_bridge_is_battle(uint8_t* rdram, recomp_context* ctx);  // export shim
+extern "C" void arena_export_tick_input(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_player_x(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_player_y(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_player_z(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_player_yaw(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -745,6 +750,11 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(recomp_get_inverted_axes);
     REGISTER_FUNC(recomp_get_analog_inverted_axes);
     REGISTER_FUNC(arena_bridge_is_battle);
+    REGISTER_FUNC(arena_export_tick_input);
+    REGISTER_FUNC(arena_export_player_x);
+    REGISTER_FUNC(arena_export_player_y);
+    REGISTER_FUNC(arena_export_player_z);
+    REGISTER_FUNC(arena_export_player_yaw);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();
