@@ -44,6 +44,7 @@
 #include "recomp_data.h"
 #include "arena_bridge.h"
 #include "librecomp/game.hpp"
+extern "C" void arena_bridge_is_battle(uint8_t* rdram, recomp_context* ctx);  // export shim
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -743,6 +744,7 @@ int main(int argc, char** argv) {
     // REGISTER_FUNC(recomp_get_mouse_deltas);
     REGISTER_FUNC(recomp_get_inverted_axes);
     REGISTER_FUNC(recomp_get_analog_inverted_axes);
+    REGISTER_FUNC(arena_bridge_is_battle);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

@@ -38,6 +38,10 @@ extern "C" void arena_bridge_tick(void) {
     }
 }
 
+extern "C" int arena_bridge_battle_active(void) {
+    return g_battle_mode ? 1 : 0;
+}
+
 extern "C" void arena_bridge_set_battle_mode(int on) {
     g_battle_mode = (on != 0);
     std::printf("[arena] battle mode -> %s\n", g_battle_mode ? "ON" : "OFF");

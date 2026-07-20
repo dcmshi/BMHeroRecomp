@@ -52,3 +52,4 @@ yield_self_1ms = 0x8F000114;
 osWritebackDCacheAll_recomp = 0x8F000118;
 osExQueueDisplaylistEvent = 0x8F00011C;
 recomp_get_render_chunk_radius = 0x8F000120;
+arena_bridge_is_battle = 0x8F000124;
