@@ -1,5 +1,6 @@
 #ifndef ARENA_BRIDGE_H
 #define ARENA_BRIDGE_H
+#include <stdint.h>
 /* Fork-native glue between the recomp host and the pure arena sim
  * (lib/bmhero-arena). A1.1a: tick a silent passenger ArenaState once per VI
  * and log proof-of-life. No game state read/written; no rendering. */
@@ -18,6 +19,15 @@ void  arena_dbg_dump(int i, int objID, int actionState);   /* A1.2b diag: log on
 float arena_get_bomber_off_x(int i);   /* A1.2b: (sim_pos_i - sim_pos_0).x * scale */
 float arena_get_bomber_off_z(int i);
 float arena_get_bomber_yaw(int i);
+/* A1.2b puppet actors: state + frozen-origin world placement (patch-callable). */
+void  arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz);
+int   arena_puppet_ready(void);
+void  arena_puppet_set_slot(int i, int slot);
+int   arena_puppet_get_slot(int i);
+float arena_puppet_wx(int i);
+float arena_puppet_wy(int i);
+float arena_puppet_wz(int i);
+float arena_puppet_yaw(int i);
 #ifdef __cplusplus
 }
 #endif

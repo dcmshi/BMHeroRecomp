@@ -72,3 +72,33 @@ extern "C" void arena_export_spawn_placeholders_once(uint8_t* rdram, recomp_cont
     for (uint32_t s = 2u; s <= 4u; ++s)
         std::memcpy(rdram + BASE + s * STRIDE, rdram + SRC, STRIDE);
 }
+
+/* A1.2b puppet exports. Floats cross the ABI as u32 bit patterns (args) or via
+ * _return (returns); no float _arg is used (unsupported for arbitrary slots). */
+extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t bx = _arg<0, uint32_t>(rdram, ctx);
+    uint32_t by = _arg<1, uint32_t>(rdram, ctx);
+    uint32_t bz = _arg<2, uint32_t>(rdram, ctx);
+    arena_puppet_capture(bx, by, bz);
+}
+extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_puppet_ready());
+}
+extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx) {
+    arena_puppet_set_slot(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+}
+extern "C" void arena_export_puppet_get_slot(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_get_slot(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_wx(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_puppet_wy(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_wy(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_puppet_wz(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_wz(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_yaw(_arg<0, int>(rdram, ctx)));
+}

@@ -56,6 +56,14 @@ extern "C" void arena_export_bomber_off_x(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_bomber_off_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_bomber_yaw(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_spawn_placeholders_once(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_get_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wy(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -767,6 +775,14 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_bomber_off_z);
     REGISTER_FUNC(arena_export_bomber_yaw);
     REGISTER_FUNC(arena_export_spawn_placeholders_once);
+    REGISTER_FUNC(arena_export_puppet_capture);
+    REGISTER_FUNC(arena_export_puppet_ready);
+    REGISTER_FUNC(arena_export_puppet_set_slot);
+    REGISTER_FUNC(arena_export_puppet_get_slot);
+    REGISTER_FUNC(arena_export_puppet_wx);
+    REGISTER_FUNC(arena_export_puppet_wy);
+    REGISTER_FUNC(arena_export_puppet_wz);
+    REGISTER_FUNC(arena_export_puppet_yaw);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();
