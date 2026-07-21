@@ -15,6 +15,9 @@ float arena_get_player_y(int i);
 float arena_get_player_z(int i);
 float arena_get_player_yaw_deg(int i);
 void  arena_dbg_dump(int i, int objID, int actionState);   /* A1.2b diag: log one object-table row */
+float arena_get_bomber_off_x(int i);   /* A1.2b: (sim_pos_i - sim_pos_0).x * scale */
+float arena_get_bomber_off_z(int i);
+float arena_get_bomber_yaw(int i);
 #ifdef __cplusplus
 }
 #endif

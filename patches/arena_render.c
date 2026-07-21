@@ -12,35 +12,29 @@ DECLARE_FUNC(f32,  arena_export_player_x, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_y, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_z, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
-DECLARE_FUNC(void, arena_export_dbg_dump, s32 i, s32 objID, s32 actionState);
 
-extern void func_80024744(void);            /* original per-frame routine 2 */
-extern void func_800821E0(void);            /* per-frame routine 1 (draw) */
+extern void func_80024744(void);            /* original per-frame routine 2 (update) */
+extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
 extern void func_8001ECB8(void);
 extern void func_80081D78(void);
 extern void func_80000964(void);
 extern void (*gDebugRoutine1)(void);
 extern void (*gDebugRoutine2)(void);
 
-/* Per-frame in-level: run the original routine-2 work, then in battle mode
- * drive our sim from the controller and puppet the player's horizontal
- * position from it. We override only X/Z (from ArenaState, offset by the
- * player's current position so movement is relative and stays in-room) and
- * leave Y to the game so it keeps the bomberman grounded. */
-/* A1.2b spike diagnostic (temporary): each battle frame, hand gObjects[0..15]
- * (model id + actionState) to the native logger, which records exactly ONE
- * snapshot to arena_bridge.log so we can see free slots (actionState==0) and
- * resident models. The patch is STATELESS (no file-scope static state — that
- * aborts in static patches); all "log once" gating lives natively. Uses only
- * proven-safe patterns: gObjects[] read (as 3d_object_hook does) + a native
- * export call (as the tick bridge does). */
+/* Per-frame in-level update wrapper: run the original routine, then in battle
+ * mode drive our sim from the controller and puppet player 0 (the campaign
+ * player object) by the sim's per-frame displacement (X/Z; Y left to the game
+ * so it stays grounded and the camera follows). This is the A1.2a render bridge.
+ *
+ * A1.2b status: puppeting 3 MORE bombers is blocked on the game's object system
+ * (see docs/bmhero-recomp-integration-notes.md §8): the player object can't be
+ * duplicated (single-player update logic), and raw-cloning a simple resident
+ * object (door/plate) into a free slot renders but crashes because the copied
+ * spawn-group links (unk10E) are needed for the draw yet invalid for a
+ * duplicate. The sound path is a proper game spawn (func_80027464) with a valid
+ * ObjSpawnInfo whose model file is resident — deferred as its own RE task. */
 void arena_render_routine(void) {
     func_80024744();
-    if (arena_bridge_is_battle()) {
-        s32 i;
-        for (i = 0; i < 16; i++)
-            arena_export_dbg_dump(i, gObjects[i].objID, gObjects[i].actionState);
-    }
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
         s32 sx = (s32)(gActiveContStickX * (31.0f / 80.0f));
@@ -52,17 +46,14 @@ void arena_render_routine(void) {
         s32 jump = (gActiveContButton & CONT_A) ? 1 : 0;
         s32 bomb = (gActiveContButton & CONT_B) ? 1 : 0;
         arena_export_tick_input(sx, sy, jump, bomb);
-        /* Move the player by our sim's per-frame velocity: add the change in
-         * sim position (this frame vs last) to the player's live position, so
-         * it moves per our physics without teleporting it out of the room. */
         gPlayerObject->Pos.x += arena_export_player_x(0);   /* getter returns dx */
         gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
         gPlayerObject->Rot.y  = arena_export_player_yaw(0);
     }
 }
 
-/* Level-enter setup: original body, but route per-frame routine 2 through
- * our wrapper so the puppet write runs every frame in-level. */
+/* Level-enter setup: original body, but route per-frame routine 2 through our
+ * wrapper so the puppet write runs every frame in-level. */
 RECOMP_PATCH void func_800824A8(void) {
     func_8001ECB8();
     gDebugRoutine1 = &func_800821E0;

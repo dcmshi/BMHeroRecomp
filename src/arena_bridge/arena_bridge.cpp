@@ -45,8 +45,9 @@ namespace {
 extern "C" void arena_bridge_tick(void) {
     ensure_init();
     if (g_battle_mode) return;   /* battle: the render patch drives the tick */
-    /* non-battle proof-of-life: neutral inputs */
-    const ArenaInput neutral[ARENA_MAX_PLAYERS] = {0, 0, 0, 0};
+    /* non-battle proof-of-life: real neutral (raw 0 != neutral, see tick_input) */
+    ArenaInput n = arena_input_pack(0, 0, 0, 0, 0);
+    const ArenaInput neutral[ARENA_MAX_PLAYERS] = { n, n, n, n };
     arena_tick(&g_state, neutral);
     if ((++g_calls % 60u) == 0u)
         proof("[arena] tick %u hash %08x\n", g_state.tick, arena_hash(&g_state));
@@ -55,13 +56,30 @@ extern "C" void arena_bridge_tick(void) {
 extern "C" void arena_bridge_tick_input(int sx, int sy, int jump, int bomb) {
     ensure_init();
     Vec3q before = g_state.players[0].pos;
-    ArenaInput in[ARENA_MAX_PLAYERS] = {0, 0, 0, 0};
+    /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
+     * full -32,-32 stick). Idle players 1-3 must get real neutral or they run. */
+    ArenaInput neutral = arena_input_pack(0, 0, 0, 0, 0);
+    ArenaInput in[ARENA_MAX_PLAYERS] = { neutral, neutral, neutral, neutral };
     in[0] = arena_input_pack(sx, sy, jump, bomb, 0);
     arena_tick(&g_state, in);
     Vec3q after = g_state.players[0].pos;
     g_render_dx  = qf(after.x - before.x) * g_scale;
     g_render_dz  = qf(after.z - before.z) * g_scale_z;
     g_render_yaw = (float)g_state.players[0].yaw * (360.0f / 65536.0f);
+
+    /* A1.2b diag: are the sim's players 1-3 holding their corners, or does the
+     * convergence come from the game's object update? Log all 4 once a second. */
+    static uint32_t n = 0;
+    if ((++n % 60u) == 0u && g_log) {
+        std::fprintf(g_log,
+            "[simpos] t%u p0(%.2f,%.2f) p1(%.2f,%.2f) p2(%.2f,%.2f) p3(%.2f,%.2f)\n",
+            g_state.tick,
+            qf(g_state.players[0].pos.x), qf(g_state.players[0].pos.z),
+            qf(g_state.players[1].pos.x), qf(g_state.players[1].pos.z),
+            qf(g_state.players[2].pos.x), qf(g_state.players[2].pos.z),
+            qf(g_state.players[3].pos.x), qf(g_state.players[3].pos.z));
+        std::fflush(g_log);
+    }
 }
 
 /* getters return the last tick's scaled displacement (dx/dz) and abs yaw;
@@ -70,6 +88,23 @@ extern "C" float arena_get_player_x(int i)       { (void)i; return g_render_dx; 
 extern "C" float arena_get_player_y(int i)       { (void)i; return 0.0f; }  /* Y left to game */
 extern "C" float arena_get_player_z(int i)       { (void)i; return g_render_dz; }
 extern "C" float arena_get_player_yaw_deg(int i) { (void)i; return g_render_yaw; }
+
+/* Per-index actor placement (A1.2b): the scaled XZ offset of player i from
+ * player 0's sim position, plus yaw. The patch anchors these to the live player
+ * object so the other actors sit at their sim positions (self-correcting, no
+ * absolute origin). */
+extern "C" float arena_get_bomber_off_x(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0.0f;
+    return qf(g_state.players[i].pos.x - g_state.players[0].pos.x) * g_scale;
+}
+extern "C" float arena_get_bomber_off_z(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0.0f;
+    return qf(g_state.players[i].pos.z - g_state.players[0].pos.z) * g_scale_z;
+}
+extern "C" float arena_get_bomber_yaw(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0.0f;
+    return (float)g_state.players[i].yaw * (360.0f / 65536.0f);
+}
 
 /* A1.2b diagnostic: the patch reads gObjects[i] and calls this per slot; we log
  * to arena_bridge.log (persistent, agent-readable) so we can see free slots +
