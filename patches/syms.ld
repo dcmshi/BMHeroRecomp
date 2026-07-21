@@ -58,3 +58,4 @@ arena_export_player_x = 0x8F00012C;
 arena_export_player_y = 0x8F000130;
 arena_export_player_z = 0x8F000134;
 arena_export_player_yaw = 0x8F000138;
+arena_export_dbg_dump = 0x8F00013C;

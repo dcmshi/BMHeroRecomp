@@ -14,6 +14,7 @@ float arena_get_player_x(int i);
 float arena_get_player_y(int i);
 float arena_get_player_z(int i);
 float arena_get_player_yaw_deg(int i);
+void  arena_dbg_dump(int i, int objID, int actionState);   /* A1.2b diag: log one object-table row */
 #ifdef __cplusplus
 }
 #endif

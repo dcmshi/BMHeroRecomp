@@ -50,6 +50,7 @@ extern "C" void arena_export_player_x(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_yaw(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_dbg_dump(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -755,6 +756,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_player_y);
     REGISTER_FUNC(arena_export_player_z);
     REGISTER_FUNC(arena_export_player_yaw);
+    REGISTER_FUNC(arena_export_dbg_dump);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

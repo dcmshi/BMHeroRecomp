@@ -71,6 +71,21 @@ extern "C" float arena_get_player_y(int i)       { (void)i; return 0.0f; }  /* Y
 extern "C" float arena_get_player_z(int i)       { (void)i; return g_render_dz; }
 extern "C" float arena_get_player_yaw_deg(int i) { (void)i; return g_render_yaw; }
 
+/* A1.2b diagnostic: the patch reads gObjects[i] and calls this per slot; we log
+ * to arena_bridge.log (persistent, agent-readable) so we can see free slots +
+ * resident models in the Battle Room without recomp_printf. */
+extern "C" void arena_dbg_dump(int i, int objID, int actionState) {
+    static int done = 0;                 /* native holds the "log once" state */
+    if (done) return;
+    std::printf("[arena_dbg] obj[%d] objID=%d actionState=%d\n", i, objID, actionState);
+    std::fflush(stdout);
+    if (g_log) {
+        std::fprintf(g_log, "[arena_dbg] obj[%d] objID=%d actionState=%d\n", i, objID, actionState);
+        std::fflush(g_log);
+    }
+    if (i >= 15) done = 1;               /* one full 16-row snapshot captured */
+}
+
 extern "C" int arena_bridge_battle_active(void) {
     return g_battle_mode ? 1 : 0;
 }

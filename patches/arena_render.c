@@ -12,6 +12,7 @@ DECLARE_FUNC(f32,  arena_export_player_x, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_y, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_z, s32 i);
 DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
+DECLARE_FUNC(void, arena_export_dbg_dump, s32 i, s32 objID, s32 actionState);
 
 extern void func_80024744(void);            /* original per-frame routine 2 */
 extern void func_800821E0(void);            /* per-frame routine 1 (draw) */
@@ -26,25 +27,19 @@ extern void (*gDebugRoutine2)(void);
  * position from it. We override only X/Z (from ArenaState, offset by the
  * player's current position so movement is relative and stays in-room) and
  * leave Y to the game so it keeps the bomberman grounded. */
-/* A1.2b spike diagnostic (temporary): once, ~1.5s into battle, dump the object
- * table so we can see which slots are free (actionState==ACTION_NONE) and which
- * bomber/enemy models are already resident (drawable) in the Battle Room. */
-static int  g_dbg_frames = 0;
-static int  g_dbg_dumped = 0;
-static void arena_dbg_dump_objects(void) {
-    int i;
-    recomp_printf("[arena_dbg] gPlayerObject slot=%d\n",
-                  (int)(gPlayerObject - gObjects));
-    for (i = 0; i < 16; i++) {
-        recomp_printf("[arena_dbg] obj[%2d] objID=%d actionState=%d\n",
-                      i, (int)gObjects[i].objID, (int)gObjects[i].actionState);
-    }
-}
-
+/* A1.2b spike diagnostic (temporary): each battle frame, hand gObjects[0..15]
+ * (model id + actionState) to the native logger, which records exactly ONE
+ * snapshot to arena_bridge.log so we can see free slots (actionState==0) and
+ * resident models. The patch is STATELESS (no file-scope static state — that
+ * aborts in static patches); all "log once" gating lives natively. Uses only
+ * proven-safe patterns: gObjects[] read (as 3d_object_hook does) + a native
+ * export call (as the tick bridge does). */
 void arena_render_routine(void) {
     func_80024744();
-    if (arena_bridge_is_battle() && !g_dbg_dumped) {
-        if (++g_dbg_frames >= 90) { arena_dbg_dump_objects(); g_dbg_dumped = 1; }
+    if (arena_bridge_is_battle()) {
+        s32 i;
+        for (i = 0; i < 16; i++)
+            arena_export_dbg_dump(i, gObjects[i].objID, gObjects[i].actionState);
     }
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
