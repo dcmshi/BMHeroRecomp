@@ -22,7 +22,10 @@ extern void (*gDebugRoutine1)(void);
 extern void (*gDebugRoutine2)(void);
 
 /* Per-frame in-level: run the original routine-2 work, then in battle mode
- * drive our sim from the controller and puppet gPlayerObject from it. */
+ * drive our sim from the controller and puppet the player's horizontal
+ * position from it. We override only X/Z (from ArenaState, offset by the
+ * player's current position so movement is relative and stays in-room) and
+ * leave Y to the game so it keeps the bomberman grounded. */
 void arena_render_routine(void) {
     func_80024744();
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
@@ -36,10 +39,12 @@ void arena_render_routine(void) {
         s32 jump = (gActiveContButton & CONT_A) ? 1 : 0;
         s32 bomb = (gActiveContButton & CONT_B) ? 1 : 0;
         arena_export_tick_input(sx, sy, jump, bomb);
-        gPlayerObject->Pos.x = arena_export_player_x(0);
-        gPlayerObject->Pos.y = arena_export_player_y(0);
-        gPlayerObject->Pos.z = arena_export_player_z(0);
-        gPlayerObject->Rot.y = arena_export_player_yaw(0);
+        /* Move the player by our sim's per-frame velocity: add the change in
+         * sim position (this frame vs last) to the player's live position, so
+         * it moves per our physics without teleporting it out of the room. */
+        gPlayerObject->Pos.x += arena_export_player_x(0);   /* getter returns dx */
+        gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
+        gPlayerObject->Rot.y  = arena_export_player_yaw(0);
     }
 }
 
