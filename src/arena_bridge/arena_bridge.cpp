@@ -13,6 +13,28 @@ namespace {
     std::FILE* g_log = nullptr;   /* persistent proof evidence, agent-readable */
     bool       g_battle_mode = false;
 
+    /* Render mapping (A1.2a): the sim's per-frame displacement, scaled to
+     * Hero units. The render patch ADDS this delta to the player's live
+     * position each frame (never teleports), so it moves per our physics
+     * while the game keeps it grounded and the camera follows smoothly.
+     * TODO(feel): scale tuned on-screen. */
+    float g_scale = 120.0f;    /* Hero units per sim unit */
+    float g_scale_z = 120.0f;  /* symmetric with X; forward/back feel is a
+                                * known camera-relative item for the feel pass */
+    float g_render_dx = 0.0f;  /* last tick's displacement, scaled */
+    float g_render_dz = 0.0f;
+    float g_render_yaw = 0.0f;
+
+    float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
+
+    void ensure_init() {
+        if (!g_inited) {
+            arena_init(&g_state, 0, 4, 0xB0BB1E5u);  /* 4 players; round won't end */
+            g_inited = true;
+            g_log = std::fopen("arena_bridge.log", "w");
+        }
+    }
+
     void proof(const char* fmt, unsigned a, unsigned b) {
         std::printf(fmt, a, b);
         std::fflush(stdout);
@@ -21,22 +43,33 @@ namespace {
 }
 
 extern "C" void arena_bridge_tick(void) {
-    if (!g_inited) {
-        arena_init(&g_state, 0, 4, 0xB0BB1E5u);  /* 4 idle players; round won't end */
-        g_inited = true;
-        g_log = std::fopen("arena_bridge.log", "w");
-        proof("[arena] bridge init: state %u bytes (tick %u)\n",
-              (unsigned)sizeof(ArenaState), 0u);
-    }
-    /* neutral inputs: silent passenger this milestone */
+    ensure_init();
+    if (g_battle_mode) return;   /* battle: the render patch drives the tick */
+    /* non-battle proof-of-life: neutral inputs */
     const ArenaInput neutral[ARENA_MAX_PLAYERS] = {0, 0, 0, 0};
     arena_tick(&g_state, neutral);
-    if ((++g_calls % 60u) == 0u) {
-        proof(g_battle_mode ? "[arena] BATTLE MODE tick %u hash %08x\n"
-                            : "[arena] tick %u hash %08x\n",
-              g_state.tick, arena_hash(&g_state));
-    }
+    if ((++g_calls % 60u) == 0u)
+        proof("[arena] tick %u hash %08x\n", g_state.tick, arena_hash(&g_state));
 }
+
+extern "C" void arena_bridge_tick_input(int sx, int sy, int jump, int bomb) {
+    ensure_init();
+    Vec3q before = g_state.players[0].pos;
+    ArenaInput in[ARENA_MAX_PLAYERS] = {0, 0, 0, 0};
+    in[0] = arena_input_pack(sx, sy, jump, bomb, 0);
+    arena_tick(&g_state, in);
+    Vec3q after = g_state.players[0].pos;
+    g_render_dx  = qf(after.x - before.x) * g_scale;
+    g_render_dz  = qf(after.z - before.z) * g_scale_z;
+    g_render_yaw = (float)g_state.players[0].yaw * (360.0f / 65536.0f);
+}
+
+/* getters return the last tick's scaled displacement (dx/dz) and abs yaw;
+ * i is ignored for A1.2a (only player 0 is driven). */
+extern "C" float arena_get_player_x(int i)       { (void)i; return g_render_dx; }
+extern "C" float arena_get_player_y(int i)       { (void)i; return 0.0f; }  /* Y left to game */
+extern "C" float arena_get_player_z(int i)       { (void)i; return g_render_dz; }
+extern "C" float arena_get_player_yaw_deg(int i) { (void)i; return g_render_yaw; }
 
 extern "C" int arena_bridge_battle_active(void) {
     return g_battle_mode ? 1 : 0;
