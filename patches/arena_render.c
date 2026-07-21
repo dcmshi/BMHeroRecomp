@@ -26,8 +26,26 @@ extern void (*gDebugRoutine2)(void);
  * position from it. We override only X/Z (from ArenaState, offset by the
  * player's current position so movement is relative and stays in-room) and
  * leave Y to the game so it keeps the bomberman grounded. */
+/* A1.2b spike diagnostic (temporary): once, ~1.5s into battle, dump the object
+ * table so we can see which slots are free (actionState==ACTION_NONE) and which
+ * bomber/enemy models are already resident (drawable) in the Battle Room. */
+static int  g_dbg_frames = 0;
+static int  g_dbg_dumped = 0;
+static void arena_dbg_dump_objects(void) {
+    int i;
+    recomp_printf("[arena_dbg] gPlayerObject slot=%d\n",
+                  (int)(gPlayerObject - gObjects));
+    for (i = 0; i < 16; i++) {
+        recomp_printf("[arena_dbg] obj[%2d] objID=%d actionState=%d\n",
+                      i, (int)gObjects[i].objID, (int)gObjects[i].actionState);
+    }
+}
+
 void arena_render_routine(void) {
     func_80024744();
+    if (arena_bridge_is_battle() && !g_dbg_dumped) {
+        if (++g_dbg_frames >= 90) { arena_dbg_dump_objects(); g_dbg_dumped = 1; }
+    }
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
         s32 sx = (s32)(gActiveContStickX * (31.0f / 80.0f));
