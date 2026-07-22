@@ -87,6 +87,13 @@ extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void arena_export_spawn_gate(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_spawn_gate());
 }
+/* A1.2e: gDebugRoutine1 restore gate (see arena_draw_gate). */
+extern "C" void arena_export_draw_gate(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_draw_gate());
+}
+extern "C" void arena_export_draw_gate_reset(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; (void)ctx; arena_draw_gate_reset();
+}
 extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx) {
     arena_puppet_set_slot(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
 }

@@ -24,6 +24,8 @@ void  arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz);
 int   arena_puppet_ready(void);
 int   arena_spawn_gate(void);   /* A1.2d: 1 only after ~90 routine frames (heap-ready gate) */
 int   arena_routine_seen(void); /* A1.2f: 1 once the battle render routine has run (mash-stop) */
+int   arena_draw_gate(void);    /* A1.2e: 1 after ~30 routine frames (gDebugRoutine1 restore) */
+void  arena_draw_gate_reset(void); /* call at every level-enter (window recurs per transition) */
 void  arena_puppet_set_slot(int i, int slot);
 int   arena_puppet_get_slot(int i);
 float arena_puppet_wx(int i);

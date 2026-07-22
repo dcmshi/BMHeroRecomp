@@ -18,6 +18,8 @@ DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
 DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz);
 DECLARE_FUNC(s32,  arena_export_puppet_ready);
 DECLARE_FUNC(s32,  arena_export_spawn_gate);   /* A1.2d: 1 only after ~90 frames (heap-ready) */
+DECLARE_FUNC(s32,  arena_export_draw_gate);    /* A1.2e: 1 after ~30 frames (routine1 restore) */
+DECLARE_FUNC(void, arena_export_draw_gate_reset);  /* A1.2e: reset at every level-enter */
 DECLARE_FUNC(void, arena_export_puppet_set_slot, s32 i, s32 slot);
 DECLARE_FUNC(s32,  arena_export_puppet_get_slot, s32 i);
 DECLARE_FUNC(f32,  arena_export_puppet_wx, s32 i);
@@ -95,6 +97,21 @@ extern void (*gDebugRoutine2)(void);
  * suppresses that arena's boss. Full RE: integration notes §8. Actors are bomb
  * placeholders; real bomber models are a follow-up (skeletal, see above). */
 void arena_render_routine(void) {
+    /* A1.2e forensics: the game ROTATES the stick in place inside
+     * func_80024744 (21E10.c:833, guRotateF(gView.rot.y) -> guMtxXFMF) for
+     * gCameraType in {1,2,5,6,7,8} — capture the raw stick BEFORE that call
+     * so the hold-L log can show raw vs. game-rotated (double-rotation
+     * check). */
+    f32 raw_sx = gActiveContStickX;
+    f32 raw_sy = gActiveContStickY;
+
+    /* A1.2e stability: restore the draw hook once the load window is over
+     * (func_800824A8 leaves it NULL through the level-enter pump — see the
+     * patch below). Idempotent write, battle-agnostic (campaign levels route
+     * through this routine too and need their draw hook back). */
+    if (arena_export_draw_gate())
+        gDebugRoutine1 = &func_800821E0;
+
     /* Boss suppression: BEFORE the update loop runs any object's per-frame
      * behaviour, deactivate every gObjects[14..77] that isn't one of our actors
      * (the 3 player puppets or the 16 bomb actors — arena_is_actor_slot checks
@@ -133,9 +150,25 @@ void arena_render_routine(void) {
                 v.f = cfx * cinv; arena_export_dbg_u32(74, v.u);
                 v.f = cfz * cinv; arena_export_dbg_u32(75, v.u);
             }
+            /* Double-rotation check: 76 camera type, 77/78 raw stick (pre-
+             * func_80024744), 79/80 current stick (post), 81 gView.rot.y. */
+            arena_export_dbg_u32(76, (u32)gCameraType);
+            v.f = raw_sx;             arena_export_dbg_u32(77, v.u);
+            v.f = raw_sy;             arena_export_dbg_u32(78, v.u);
+            v.f = gActiveContStickX;  arena_export_dbg_u32(79, v.u);
+            v.f = gActiveContStickY;  arena_export_dbg_u32(80, v.u);
+            v.f = gView.rot.y;        arena_export_dbg_u32(81, v.u);
         }
 
-        /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
+        /* A1.2e RESOLVED: the raw pass-through IS camera-relative here — the
+         * game itself rotates gActiveContStickX/Y in place by gView.rot.y
+         * inside func_80024744 (21E10.c:833) for gCameraType in {1,2,5,6,7,8},
+         * and this arena is type 6 (probe 2026-07-22: raw (0,80) -> (43.5,68.0)
+         * = exactly rot.y=34deg). An additional gView-based rotation here
+         * DOUBLE-ROTATES (~2x35deg -> forward speed cut to ~1/3 — the "slow
+         * up/down" report, quantified). The A1.2a "compressed" note predates
+         * the Nitros warp (Battle Room may differ — re-check if the map ever
+         * changes: log gCameraType, must be in the rotation set). */
         s32 sx = (s32)(gActiveContStickX * (31.0f / 80.0f));
         s32 sy = (s32)(gActiveContStickY * (31.0f / 80.0f));
         if (sx >  31) sx =  31;
@@ -149,7 +182,13 @@ void arena_render_routine(void) {
         arena_export_tick_input(sx, sy, buttons);
         gPlayerObject->Pos.x += arena_export_player_x(0);   /* getter returns dx */
         gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
-        gPlayerObject->Rot.y  = arena_export_player_yaw(0);
+        /* A1.2e: +180 — sim yaw vs game Rot.y are half-turn offset (player
+         * visibly ran facing backwards; user report 2026-07-22). */
+        {
+            f32 fy = arena_export_player_yaw(0) + 180.0f;
+            if (fy >= 360.0f) fy -= 360.0f;
+            gPlayerObject->Rot.y = fy;
+        }
 
         /* Spawn the 3 actors once. Freeze the world anchor (player's spawn Pos,
          * passed as u32 bits — the export ABI can't take float args) + sim ref,
@@ -296,10 +335,12 @@ void arena_render_routine(void) {
             for (i = 1; i < 4; i++) {
                 s32 slot = arena_export_puppet_get_slot(i);
                 if (slot >= 0) {
+                    f32 py = arena_export_puppet_yaw(i) + 180.0f;   /* same half-turn as player 0 */
+                    if (py >= 360.0f) py -= 360.0f;
                     gObjects[slot].Pos.x       = arena_export_puppet_wx(i);
                     gObjects[slot].Pos.y       = arena_export_puppet_wy(i);
                     gObjects[slot].Pos.z       = arena_export_puppet_wz(i);
-                    gObjects[slot].Rot.y       = arena_export_puppet_yaw(i);
+                    gObjects[slot].Rot.y       = py;
                     gObjects[slot].actionState = ACTION_IDLE;
                 }
             }
@@ -362,7 +403,16 @@ void arena_render_routine(void) {
  * wrapper so the puppet write runs every frame in-level. */
 RECOMP_PATCH void func_800824A8(void) {
     func_8001ECB8();
-    gDebugRoutine1 = &func_800821E0;
+    /* A1.2e stability: do NOT set gDebugRoutine1 here. The runtime's func_map
+     * mutates during overlay load/unload, and the draw dispatcher's INDIRECT
+     * call (func_8001D9E4 -> gDebugRoutine1()) races it during the level-enter
+     * pump below (func_80000964) — 7 symbolized dumps, stochastic, timing-
+     * dependent (human-paced frontends hit it, the soak's mash rarely does).
+     * The dispatcher tolerates NULL (17930.c:1561); arena_render_routine
+     * restores routine1 once the load window is over (arena_draw_gate, ~30
+     * routine frames). Same crash class as the §8.9 racing prints. */
+    gDebugRoutine1 = NULL;
+    arena_export_draw_gate_reset();   /* the load window recurs per transition */
     gDebugRoutine2 = &arena_render_routine;   /* was &func_80024744 */
     func_80081D78();
     func_80000964();

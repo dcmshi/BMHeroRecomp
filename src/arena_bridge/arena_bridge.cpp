@@ -86,9 +86,34 @@ extern "C" void arena_bridge_tick(void) {
 static bool g_routine_seen = false;
 extern "C" int arena_routine_seen(void) { return g_routine_seen ? 1 : 0; }
 
+/* A1.2e stability: gate for restoring gDebugRoutine1 after the level-enter
+ * load window. The runtime's func_map mutates during overlay load/unload and
+ * indirect-call lookups on the game thread RACE it (same mechanism as the
+ * §8.9 print crashes; 7 symbolized dumps all name the draw dispatcher's
+ * gDebugRoutine1() call). The patch keeps routine1 NULL through the window
+ * (dispatcher tolerates NULL) and restores it once this opens (~0.5s of
+ * routine invocations). Process-lifetime, battle-agnostic. */
+static int g_draw_warmup = 0;
+extern "C" int arena_draw_gate(void) {
+    if (g_draw_warmup < 30) { g_draw_warmup++; return 0; }
+    return 1;
+}
+/* Reset at EVERY level-enter (func_800824A8 patch): the load window recurs on
+ * every level transition — a process-lifetime gate left the hook restored
+ * instantly on RE-entry and the race fired again (probe crash 2026-07-22,
+ * player ran into the boss room's level-exit trigger). */
+extern "C" void arena_draw_gate_reset(void) { g_draw_warmup = 0; }
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
+    /* A1.2f probe forensics (TEMPORARY): prove whether injected input reaches
+     * the sim at all — log the first nonzero stick once. */
+    static bool s_first_input_logged = false;
+    if (!s_first_input_logged && (sx != 0 || sy != 0)) {
+        s_first_input_logged = true;
+        if (g_log) { std::fprintf(g_log, "[input] first nonzero sx=%d sy=%d\n", sx, sy); std::fflush(g_log); }
+    }
     Vec3q before = g_state.players[0].pos;
     /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
      * full -32,-32 stick). Idle players 1-3 must get real neutral or they run. */

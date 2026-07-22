@@ -5,7 +5,11 @@
 # process alive). Exit code = number of failures.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\arena-soak.ps1 -N 10
-param([int]$N = 10, [int]$TimeoutSec = 75)
+param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe)
+# -Probe: single run in ARENA_AUTO_BATTLE=3 (in-level stick-up + hold-L
+# injection for the camera forensics); dwells 8s after PASS so the injected
+# samples land in the log before the kill.
+if ($Probe) { $N = 1 }
 
 $root  = Split-Path $PSScriptRoot -Parent
 $exe   = Join-Path $root "build-rwdi\BMHeroRecompiled.exe"
@@ -22,7 +26,7 @@ for ($i = 1; $i -le $N; $i++) {
     Remove-Item $log -Force -ErrorAction SilentlyContinue
     $dumpCount = (Get-ChildItem $dumps -Filter *.dmp -ErrorAction SilentlyContinue | Measure-Object).Count
 
-    $env:ARENA_AUTO_BATTLE = "1"
+    if ($Probe) { $env:ARENA_AUTO_BATTLE = "3" } else { $env:ARENA_AUTO_BATTLE = "1" }
     $p = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
     $verdict = "HANG"; $detail = ""
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -42,6 +46,7 @@ for ($i = 1; $i -le $N; $i++) {
         }
     }
     $secs = [int]$sw.Elapsed.TotalSeconds
+    if ($Probe -and $verdict -eq "PASS") { Start-Sleep -Seconds 8 }   # let the injection sample
     Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
     $results += [pscustomobject]@{ Iter = $i; Verdict = $verdict; Seconds = $secs; Detail = $detail }
     Write-Host ("iter {0}: {1} ({2}s) {3}" -f $i, $verdict, $secs, $detail)

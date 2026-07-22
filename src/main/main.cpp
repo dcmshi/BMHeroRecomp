@@ -59,6 +59,8 @@ extern "C" void arena_export_spawn_placeholders_once(uint8_t* rdram, recomp_cont
 extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_spawn_gate(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_draw_gate(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_draw_gate_reset(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_get_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx);
@@ -615,14 +617,29 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && v[0] == '1';
+        return v != nullptr && (v[0] == '1' || v[0] == '3');   /* 3 = probe mode */
     }();
-    if (soak_active && ok && controller_num == 0 && !arena_routine_seen()) {
-        static uint32_t polls = 0;
-        polls++;
-        if ((polls >> 2) & 1) {                        /* 4 polls on / 4 off */
-            *buttons |= ((polls >> 3) & 1) ? 0x1000    /* START */
-                                           : 0x8000;   /* A */
+    if (soak_active && ok && controller_num == 0) {
+        if (!arena_routine_seen()) {
+            static uint32_t polls = 0;
+            polls++;
+            if ((polls >> 2) & 1) {                        /* 4 polls on / 4 off */
+                *buttons |= ((polls >> 3) & 1) ? 0x1000    /* START */
+                                               : 0x8000;   /* A */
+            }
+        } else {
+            /* Probe mode (ARENA_AUTO_BATTLE=3): once in-level, hold stick-up +
+             * L for ~4s so the hold-L forensics sample under known input —
+             * the machine-run version of the human "hold W + E" protocol. */
+            static const char* mode = std::getenv("ARENA_AUTO_BATTLE");
+            if (mode && mode[0] == '3') {
+                static uint32_t post = 0;
+                post++;
+                if (post > 30 && post < 400) {   /* widened for rate uncertainty; probe forensics */
+                    *y = 1.0f;                  /* stick up */
+                    *buttons |= 0x0020;         /* CONT_L -> forensics logging */
+                }
+            }
         }
     }
     return ok;
@@ -637,7 +654,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;
@@ -844,6 +861,8 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_puppet_capture);
     REGISTER_FUNC(arena_export_puppet_ready);
     REGISTER_FUNC(arena_export_spawn_gate);
+    REGISTER_FUNC(arena_export_draw_gate);
+    REGISTER_FUNC(arena_export_draw_gate_reset);
     REGISTER_FUNC(arena_export_puppet_set_slot);
     REGISTER_FUNC(arena_export_puppet_get_slot);
     REGISTER_FUNC(arena_export_puppet_wx);
