@@ -42,7 +42,11 @@ RECOMP_PATCH void load_from_rom_to_addr(void* start, void* addr, s32 size) {
     u8* start_loc;
     u8* addr_loc;
 
-    recomp_printf("[load_from_rom_to_addr] start 0x%08X addr 0x%08X size 0x%08X\n", (u32)start, (u32)addr, size);
+    /* recomp_printf here intermittently CRASHES during level load (symbolized
+     * dump 2026-07-22: _Printf's indirect call -> get_function "Failed to find
+     * function" -> exit -> terminate -> 0xC0000409). It fires for EVERY ROM
+     * section load and races the load thread; disabled. */
+    /* recomp_printf("[load_from_rom_to_addr] start 0x%08X addr 0x%08X size 0x%08X\n", (u32)start, (u32)addr, size); */
 
     osWritebackDCache(addr, size);
     osInvalICache(addr, size);

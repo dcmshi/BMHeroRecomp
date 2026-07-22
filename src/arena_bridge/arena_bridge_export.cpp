@@ -132,6 +132,24 @@ extern "C" void arena_export_is_actor_slot(uint8_t* rdram, recomp_context* ctx) 
 extern "C" void arena_export_spike_once(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_spike_once());
 }
+extern "C" void arena_export_spike_next(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_spike_next());
+}
+extern "C" void arena_export_sweep_active(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_sweep_active());
+}
+extern "C" void arena_export_blast_active(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_active(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_blast_wr(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_wr(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_blastactor_set_slot(uint8_t* rdram, recomp_context* ctx) {
+    arena_blastactor_set_slot(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+}
+extern "C" void arena_export_blastactor_get_slot(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blastactor_get_slot(_arg<0, int>(rdram, ctx)));
+}
 extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_blast_new(_arg<0, int>(rdram, ctx)));
 }

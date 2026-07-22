@@ -39,10 +39,16 @@ int   arena_bomb_get_slot(int i);
 int   arena_is_actor_slot(int slot);
 /* A1.2c slice 2: blast effects (patch-callable). */
 int   arena_spike_once(void);      /* 1 on first call only (ID-spike latch) */
+int   arena_sweep_active(void);    /* 1 during the entry window (boss cleanup) */
+int   arena_spike_next(void);      /* next spike step 0..9 once per Q edge, else -1 */
 int   arena_blast_new(int i);      /* 1 once per blast birth; call all i every frame */
 float arena_blast_wx(int i);
 float arena_blast_wy(int i);
 float arena_blast_wz(int i);
+int   arena_blast_active(int i);   /* ttl != 0 */
+float arena_blast_wr(int i);       /* world-units current blast radius */
+void  arena_blastactor_set_slot(int i, int slot);   /* 4 pooled blast actors */
+int   arena_blastactor_get_slot(int i);
 #ifdef __cplusplus
 }
 #endif

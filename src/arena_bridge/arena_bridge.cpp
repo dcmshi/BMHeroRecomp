@@ -5,6 +5,7 @@
 
 extern "C" {
 #include "arena/arena_sim.h"
+#include "arena/arena_tuning.h"   /* TUNE_BLAST_* for the blast-actor visuals */
 }
 
 namespace {
@@ -40,6 +41,12 @@ namespace {
     /* A1.2c slice 2: blast liveness last frame (edge detect) + spike latch. */
     bool  g_blast_prev[ARENA_MAX_BLASTS] = {};
     bool  g_spike_done = false;
+    /* Spike v3: one effect per Q press (edge tracked here from tick buttons). */
+    bool  g_set_prev = false;
+    bool  g_spike_pending = false;
+    int   g_spike_idx = 0;
+    /* A1.2c slice 2 fallback: 4 pooled blast actors (bomb mesh, scaled). */
+    int   g_blast_slot[4] = { -1, -1, -1, -1 };
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -104,7 +111,18 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                      g_state.tick, nb, g_state.players[0].held_bomb);
         std::fflush(g_log);
     }
-    (void)buttons;
+    /* Early-frame input forensics: any nonzero buttons in the first ~3s means
+     * gActiveContButton carries stale/garbage bits during the fade. */
+    if (g_state.tick <= 180 && buttons != 0 && g_log) {
+        std::fprintf(g_log, "[earlybtn] t%u buttons=0x%x\n", g_state.tick, buttons);
+        std::fflush(g_log);
+    }
+    /* Spike v3: arm one step per set/kick PRESS edge (tick-guarded). */
+    {
+        bool set_now = ((buttons >> 2) & 1) != 0;
+        if (set_now && !g_set_prev && g_state.tick > 120) g_spike_pending = true;
+        g_set_prev = set_now;
+    }
 }
 
 /* getters return the last tick's scaled displacement (dx/dz) and abs yaw;
@@ -229,15 +247,35 @@ extern "C" int  arena_bomb_get_slot(int i)           { return (i >= 0 && i < ARE
 extern "C" int arena_is_actor_slot(int slot) {
     for (int i = 1; i < ARENA_MAX_PLAYERS; i++) if (g_puppet_slot[i] == slot) return 1;
     for (int i = 0; i < ARENA_MAX_BOMBS;   i++) if (g_bomb_slot[i]   == slot) return 1;
+    for (int i = 0; i < 4;                 i++) if (g_blast_slot[i]  == slot) return 1;
     return 0;
 }
 
 /* A1.2c slice 2: blasts. Edge-detect per index (the patch calls blast_new for
  * ALL 16 indices every frame, so prev-tracking inside the getter is sound). */
 extern "C" int arena_spike_once(void) {
+    /* Guard: ignore (WITHOUT latching) during the first ~2s in-level —
+     * gActiveContButton may carry garbage/stale bits during the load fade,
+     * which must not auto-fire the spike. */
+    if (g_state.tick <= 120) return 0;
     if (g_spike_done) return 0;
     g_spike_done = true;
     return 1;
+}
+/* Sweep gate: 1 during the entry window only. The boss is deactivated in the
+ * first frames and stays down; an every-frame sweep also kills any effect
+ * objects the game spawns into [14..77] (invisible effects + delayed crash). */
+extern "C" int arena_sweep_active(void) {
+    return g_state.tick < 300 ? 1 : 0;   /* ~5s entry window */
+}
+
+/* Spike v3: returns the next spike step index (0..9) exactly once per armed
+ * Q-press edge, else -1. The patch maps the index to an effect ID. */
+extern "C" int arena_spike_next(void) {
+    if (!g_spike_pending) return -1;
+    g_spike_pending = false;
+    if (g_spike_idx >= 10) return -1;
+    return g_spike_idx++;
 }
 extern "C" int arena_blast_new(int i) {
     if (i < 0 || i >= ARENA_MAX_BLASTS) return 0;
@@ -258,3 +296,16 @@ extern "C" float arena_blast_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_z;
     return g_origin_z + (qf(g_state.blasts[i].center.z) - g_ref_sz) * g_scale_z;
 }
+extern "C" int arena_blast_active(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return 0;
+    return g_state.blasts[i].ttl != 0 ? 1 : 0;
+}
+/* World-units blast radius right now (grows over TUNE_BLAST_GROW_TICKS). */
+extern "C" float arena_blast_wr(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return 0.0f;
+    uint16_t rt = g_state.blasts[i].radius_t;
+    if (rt > TUNE_BLAST_GROW_TICKS) rt = TUNE_BLAST_GROW_TICKS;
+    return qf(TUNE_BLAST_RADIUS) * ((float)rt / (float)TUNE_BLAST_GROW_TICKS) * g_scale;
+}
+extern "C" void arena_blastactor_set_slot(int i, int slot) { if (i >= 0 && i < 4) g_blast_slot[i] = slot; }
+extern "C" int  arena_blastactor_get_slot(int i)           { return (i >= 0 && i < 4) ? g_blast_slot[i] : -1; }

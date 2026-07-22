@@ -35,6 +35,9 @@ DECLARE_FUNC(s32,  arena_export_is_actor_slot, s32 slot);
 
 /* A1.2c slice 2: blast exports + the game effect spawner */
 DECLARE_FUNC(s32,  arena_export_spike_once);
+DECLARE_FUNC(s32,  arena_export_spike_next);
+DECLARE_FUNC(s32,  arena_export_sweep_active);
+DECLARE_FUNC(void, arena_export_dbg_u32, s32 tag, s32 val);   /* evidence logger */
 DECLARE_FUNC(s32,  arena_export_blast_new, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wx, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wy, s32 i);
@@ -89,6 +92,10 @@ void arena_render_routine(void) {
      * both native slot tables). Silences the arena's boss (and its flaky
      * behaviour) while leaving the map's floor geometry (not in gObjects) intact. */
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        /* EVERY FRAME: the boss re-activates after the entry window (confirmed
+         * on screen when the sweep was gated to ~5s), so keep sweeping all
+         * non-actor [14..77] objects. Game effects turned out NOT to live in
+         * this range (their draw ran with the sweep off), so this is safe. */
         s32 k;
         for (k = 14; k < 78; k++) {
             if (!arena_export_is_actor_slot(k))
@@ -137,6 +144,28 @@ void arena_render_routine(void) {
                                              gPlayerObject->Pos.z, 0.0f);
                     if (slot >= 0) func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bind anim */
                     arena_export_puppet_set_slot(i, slot);
+                }
+            }
+
+            /* A1.2c slice 2 fallback: 4 blast actors (bomb mesh, scaled by the
+             * sim's blast radius each frame), start hidden. */
+            {
+                s32 bj;
+                for (bj = 0; bj < 4; bj++) {
+                    struct ObjSpawnInfo linfo;
+                    linfo.unk0 = 0; linfo.unk2 = OBJ_TOBIRA1_O; linfo.unk4 = 9;
+                    linfo.unk6 = 0; linfo.unk7 = 0; linfo.unk8 = 0; linfo.unk9 = 0; linfo.unkA = 0;
+                    {
+                        s32 slot = func_80027464(1, &linfo,
+                                                 gPlayerObject->Pos.x,
+                                                 gPlayerObject->Pos.y,
+                                                 gPlayerObject->Pos.z, 0.0f);
+                        if (slot >= 0) {
+                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);
+                            gObjects[slot].actionState = ACTION_NONE;   /* start hidden */
+                        }
+                        arena_export_blastactor_set_slot(bj, slot);
+                    }
                 }
             }
 
@@ -196,16 +225,36 @@ void arena_render_routine(void) {
             }
         }
 
-        /* EFFECT-ID SPIKE (temporary): first Q press spawns one effect of each
-         * candidate ID 0x2BC..0x2CD in two rows of 9 around the player.
-         * Layout key: col = idx%9 (x: -400..+400 step 100), row = idx/9
-         * (z: +150 near row = IDs 2BC..2C4, +300 far row = 2C5..2CD). */
-        if ((gActiveContButton & CONT_G) && arena_export_spike_once()) {
-            s32 idx;
-            for (idx = 0; idx < 18; idx++) {
-                f32 ex = gPlayerObject->Pos.x + ((idx % 9) * 100.0f - 400.0f);
-                f32 ez = gPlayerObject->Pos.z + 150.0f + ((idx / 9) * 150.0f);
-                func_80081468(0x2BC + idx, ex, gPlayerObject->Pos.y, ez);
+        /* A1.2c slice 2 (fallback visual): drive the 4 blast actors from the
+         * sim's live blasts — position at each blast center, Scale grown with
+         * the sim radius (also doubles as the generic-draw Scale test: if
+         * Scale is ignored they still show as a normal-size 'pop'). The game
+         * effect spawner (func_80081468) was abandoned: in this bypassed
+         * arena its effects render invisible and several IDs crash the
+         * effect-list draw (func_8001CDF4) — see integration notes. */
+        {
+            s32 aj = 0;
+            s32 bi;
+            for (bi = 0; bi < 16 && aj < 4; bi++) {
+                if (arena_export_blast_active(bi)) {
+                    s32 slot = arena_export_blastactor_get_slot(aj);
+                    if (slot >= 0) {
+                        f32 sc = arena_export_blast_wr(bi) / 15.0f;   /* mesh~15u base; TODO(feel) */
+                        if (sc < 1.0f) sc = 1.0f;
+                        gObjects[slot].Pos.x       = arena_export_blast_wx(bi);
+                        gObjects[slot].Pos.y       = arena_export_blast_wy(bi);
+                        gObjects[slot].Pos.z       = arena_export_blast_wz(bi);
+                        gObjects[slot].Scale.x     = sc;
+                        gObjects[slot].Scale.y     = sc;
+                        gObjects[slot].Scale.z     = sc;
+                        gObjects[slot].actionState = ACTION_IDLE;
+                    }
+                    aj++;
+                }
+            }
+            for (; aj < 4; aj++) {
+                s32 slot = arena_export_blastactor_get_slot(aj);
+                if (slot >= 0) gObjects[slot].actionState = ACTION_NONE;
             }
         }
     }

@@ -18,6 +18,13 @@ DECLARE_FUNC(s32, arena_bridge_is_battle);
 RECOMP_PATCH void func_80081C50(void) {
     if (arena_bridge_is_battle()) {
         gCurrentLevel = ARENA_WARP_MAP;
+        /* NOTE (2026-07-21): tried neutering gLevelInfo[level]->unk24/unk28
+         * (the loader's spawn hooks) to kill the boss before init — but those
+         * hooks also do draw/level setup: the arena then white-screens
+         * deterministically. Reverted. The stochastic load-window crash (~1/3
+         * of boots, no [capture] logged) remains an open stabilization item —
+         * see integration notes; the per-frame sweep handles the boss once
+         * in-level. */
         recomp_printf("[arena_warp] -> map %d\n", gCurrentLevel);
     }
     D_8016E430 = 0;
