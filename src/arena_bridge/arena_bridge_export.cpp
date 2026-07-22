@@ -102,3 +102,6 @@ extern "C" void arena_export_puppet_wz(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_puppet_yaw(_arg<0, int>(rdram, ctx)));
 }
+extern "C" void arena_export_dbg_u32(uint8_t* rdram, recomp_context* ctx) {
+    arena_dbg_u32(_arg<0, int>(rdram, ctx), _arg<1, unsigned>(rdram, ctx));
+}

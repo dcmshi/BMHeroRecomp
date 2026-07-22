@@ -28,6 +28,7 @@ float arena_puppet_wx(int i);
 float arena_puppet_wy(int i);
 float arena_puppet_wz(int i);
 float arena_puppet_yaw(int i);
+void  arena_dbg_u32(int tag, unsigned val);   /* A1.2b temp evidence logger */
 #ifdef __cplusplus
 }
 #endif

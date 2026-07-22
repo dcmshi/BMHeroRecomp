@@ -64,6 +64,7 @@ extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_wz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_dbg_u32(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -783,6 +784,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_puppet_wy);
     REGISTER_FUNC(arena_export_puppet_wz);
     REGISTER_FUNC(arena_export_puppet_yaw);
+    REGISTER_FUNC(arena_export_dbg_u32);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

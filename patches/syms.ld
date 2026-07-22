@@ -72,3 +72,4 @@ arena_export_puppet_wx = 0x8F000164;
 arena_export_puppet_wy = 0x8F000168;
 arena_export_puppet_wz = 0x8F00016C;
 arena_export_puppet_yaw = 0x8F000170;
+arena_export_dbg_u32 = 0x8F000174;

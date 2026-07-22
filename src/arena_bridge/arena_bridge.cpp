@@ -154,6 +154,11 @@ extern "C" void arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz) {
     g_ref_sx = qf(g_state.players[0].pos.x);
     g_ref_sz = qf(g_state.players[0].pos.z);
     g_puppets_ready = true;
+    if (g_log) {
+        std::fprintf(g_log, "[capture] origin(%.2f,%.2f,%.2f) ref_s(%.2f,%.2f)\n",
+                     g_origin_x, g_origin_y, g_origin_z, g_ref_sx, g_ref_sz);
+        std::fflush(g_log);
+    }
 }
 extern "C" int  arena_puppet_ready(void)              { return g_puppets_ready ? 1 : 0; }
 extern "C" void arena_puppet_set_slot(int i, int slot){ if (i >= 0 && i < ARENA_MAX_PLAYERS) g_puppet_slot[i] = slot; }
@@ -172,4 +177,12 @@ extern "C" float arena_puppet_wz(int i) {
 extern "C" float arena_puppet_yaw(int i) {
     if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0.0f;
     return (float)g_state.players[i].yaw * (360.0f / 65536.0f);
+}
+
+/* A1.2b debug: log a tagged u32 (e.g. a gFileArray ptr / a free slot) to the
+ * persistent, agent-readable arena_bridge.log. Temporary evidence-gathering. */
+extern "C" void arena_dbg_u32(int tag, unsigned val) {
+    std::printf("[dbg] tag=%d val=0x%08x (%u)\n", tag, val, val);
+    std::fflush(stdout);
+    if (g_log) { std::fprintf(g_log, "[dbg] tag=%d val=0x%08x (%u)\n", tag, val, val); std::fflush(g_log); }
 }
