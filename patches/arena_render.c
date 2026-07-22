@@ -182,6 +182,17 @@ void arena_render_routine(void) {
                         info.unkA = bi->unkA;
                         arena_export_dbg_u32(44, ((u32)bi->unk0 << 16) | (u16)bi->unk4); /* part|file */
                     }
+                    /* Registry empty => puppet stays a bomb. A1.2d verdict: the
+                     * bomber MESH is resident (file 1 cfg 0x13) but its ANIMS are
+                     * not reachable in the arena — the menu stream table
+                     * D_80115F34 is garbage in-level (hdr count 0x6080A, file 1
+                     * byte-identical across NITROS_1/MIRROR_ROOM), gObjInfo is
+                     * empty in every warpable arena, and the modelTag has no
+                     * embedded anims (func_8001191C AVs on the null-source bind,
+                     * dump 2026-07-22). Drawing the mesh without an anim instance
+                     * white-screens (A1.2b). Future lead: player 0 ANIMATES here,
+                     * so valid bomber anim data IS resident via the player path —
+                     * trace gPlayerObject's anim-instance bind. */
                 }
                 {
                     s32 slot = func_80027464(1, &info,

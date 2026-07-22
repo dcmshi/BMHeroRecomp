@@ -8,7 +8,13 @@
 // Native bridge import (registered in main.cpp). Returns 1 in battle mode.
 DECLARE_FUNC(s32, arena_bridge_is_battle);
 
-#define ARENA_WARP_MAP 15  /* MAP_NITROS_1 boss arena (flat/open); was 2 MAP_BATTLE_ROOM */
+#define ARENA_WARP_MAP 15  /* MAP_NITROS_1 boss arena (flat/open).
+                            * History: 2 MAP_BATTLE_ROOM (pits aborted actor
+                            * collision); 71 MAP_MIRROR_ROOM tried for A1.2d
+                            * (bomber anim data) — registry empty there too AND
+                            * direct-warp hits an unregistered function pointer
+                            * in func_8001D9E4 at level-enter (get_function ->
+                            * exit; dump 2026-07-22). Avoid 71. */
 
 // A1.1b-ii: func_80081C50 seeds the next-level var (D_8016E432) and the spawn
 // coords from gCurrentLevel, just before the loader (func_80081D78) reads
