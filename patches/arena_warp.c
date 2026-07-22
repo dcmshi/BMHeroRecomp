@@ -21,11 +21,15 @@ RECOMP_PATCH void func_80081C50(void) {
         /* NOTE (2026-07-21): tried neutering gLevelInfo[level]->unk24/unk28
          * (the loader's spawn hooks) to kill the boss before init — but those
          * hooks also do draw/level setup: the arena then white-screens
-         * deterministically. Reverted. The stochastic load-window crash (~1/3
-         * of boots, no [capture] logged) remains an open stabilization item —
-         * see integration notes; the per-frame sweep handles the boss once
-         * in-level. */
-        recomp_printf("[arena_warp] -> map %d\n", gCurrentLevel);
+         * deterministically. Reverted. The per-frame sweep handles the boss
+         * once in-level. */
+        /* recomp_printf here was the THIRD confirmed site of the load-window
+         * print crash (_Printf -> get_function -> exit; symbolized dump
+         * 2026-07-22) — the very "stochastic load crash" the note above called
+         * an open item. This function IS the level-load prep; never print here.
+         * (Sites 1+2: required_patches.c load_from_rom_to_addr,
+         * 3d_object_hook.c func_800608B8.) */
+        /* recomp_printf("[arena_warp] -> map %d\n", gCurrentLevel); */
     }
     D_8016E430 = 0;
     D_8016E432 = (s16) gCurrentLevel;

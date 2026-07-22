@@ -23,7 +23,12 @@ RECOMP_PATCH void func_800608B8(struct UnkStruct_8006031C* arg0) {
         if (*(u32*)&arg0[sp1C].unk8 == 0x00000000 &&
             *(u32*)&arg0[sp1C].unkC == 0x00000000 &&
             *(u32*)&arg0[sp1C].unk10 == 0x00000000) {
-                recomp_printf("Bad movement found for objID 0x%02X, skipping\n", sp18);
+                /* recomp_printf here intermittently CRASHES during level load —
+                 * same class as the load_from_rom_to_addr print (required_patches.c):
+                 * _Printf's indirect call -> get_function "Failed to find function"
+                 * -> exit -> terminate (symbolized dump 2026-07-22, second site).
+                 * This runs in the level-load window per spawned object; disabled. */
+                /* recomp_printf("Bad movement found for objID 0x%02X, skipping\n", sp18); */
                 gTrackedObjects_OneTime[sp18] = 1;
         }
 
