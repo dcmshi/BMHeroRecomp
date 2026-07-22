@@ -62,6 +62,22 @@ extern void (*gDebugRoutine2)(void);
  * swap the bomb placeholder mesh (gFileArray[9]) for the bomber (gFileArray[1]);
  * inert objID (door behaviour still runs). */
 void arena_render_routine(void) {
+#if ARENA_SPAWN_TEST
+    /* Boss suppression: BEFORE the update loop (func_80024744) runs any object's
+     * per-frame behaviour, deactivate every gObjects[14..77] that isn't one of
+     * our 3 puppets. In a Nitros boss arena this silences the boss (and its
+     * flaky per-frame behaviour) while leaving the flat floor geometry intact. */
+    if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        s32 s1 = arena_export_puppet_get_slot(1);
+        s32 s2 = arena_export_puppet_get_slot(2);
+        s32 s3 = arena_export_puppet_get_slot(3);
+        s32 k;
+        for (k = 14; k < 78; k++) {
+            if (k != s1 && k != s2 && k != s3)
+                gObjects[k].actionState = ACTION_NONE;
+        }
+    }
+#endif
     func_80024744();
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
