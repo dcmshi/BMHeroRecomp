@@ -105,13 +105,6 @@ void arena_render_routine(void) {
     f32 raw_sx = gActiveContStickX;
     f32 raw_sy = gActiveContStickY;
 
-    /* A1.2e stability: restore the draw hook once the load window is over
-     * (func_800824A8 leaves it NULL through the level-enter pump — see the
-     * patch below). Idempotent write, battle-agnostic (campaign levels route
-     * through this routine too and need their draw hook back). */
-    if (arena_export_draw_gate())
-        gDebugRoutine1 = &func_800821E0;
-
     /* Boss suppression: BEFORE the update loop runs any object's per-frame
      * behaviour, deactivate every gObjects[14..77] that isn't one of our actors
      * (the 3 player puppets or the 16 bomb actors — arena_is_actor_slot checks
@@ -405,17 +398,18 @@ void arena_render_routine(void) {
  * wrapper so the puppet write runs every frame in-level. */
 RECOMP_PATCH void func_800824A8(void) {
     func_8001ECB8();
-    /* A1.2e stability: do NOT set gDebugRoutine1 here. The runtime's func_map
-     * mutates during overlay load/unload, and the draw dispatcher's INDIRECT
-     * call (func_8001D9E4 -> gDebugRoutine1()) races it during the level-enter
-     * pump below (func_80000964) — 7 symbolized dumps, stochastic, timing-
-     * dependent (human-paced frontends hit it, the soak's mash rarely does).
-     * The dispatcher tolerates NULL (17930.c:1561); arena_render_routine
-     * restores routine1 once the load window is over (arena_draw_gate, ~30
-     * routine frames). Same crash class as the §8.9 racing prints. */
-    gDebugRoutine1 = NULL;
-    arena_export_draw_gate_reset();   /* the load window recurs per transition */
+    /* A1.2e stability history: NULL-parking routine1 through the load window
+     * failed — the level-enter pump can run 90+ routine frames, so any counter
+     * gate reopens IN-pump (dump 2026-07-22 16:37). The race is fixed at the
+     * dispatcher instead: see the func_8001D9E4 patch below (direct dispatch,
+     * no func_map lookup for the known hook). Assign immediately again. */
+    gDebugRoutine1 = &func_800821E0;
     gDebugRoutine2 = &arena_render_routine;   /* was &func_80024744 */
     func_80081D78();
     func_80000964();
 }
+
+/* A1.2e stability note: the draw dispatcher (func_8001D9E4) is patched in
+ * required_patches.c — its `gDebugRoutine1()` indirect call was changed there
+ * to direct-dispatch our known hook (no func_map lookup — the lookup RACES
+ * overlay load/unload; 8 symbolized dumps, same class as the §8.9 prints). */
