@@ -628,16 +628,17 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                                                : 0x8000;   /* A */
             }
         } else {
-            /* Probe mode (ARENA_AUTO_BATTLE=3): once in-level, hold stick-up +
-             * L for ~4s so the hold-L forensics sample under known input —
-             * the machine-run version of the human "hold W + E" protocol. */
+            /* Probe mode (ARENA_AUTO_BATTLE=3), phased: run TOWARD the camera
+             * (facing visible on screenshots), then press Z (set-bomb check —
+             * read [bombs] live count from the log). */
             static const char* mode = std::getenv("ARENA_AUTO_BATTLE");
             if (mode && mode[0] == '3') {
                 static uint32_t post = 0;
                 post++;
-                if (post > 30 && post < 400) {   /* widened for rate uncertainty; probe forensics */
-                    *y = 1.0f;                  /* stick up */
-                    *buttons |= 0x0020;         /* CONT_L -> forensics logging */
+                if (post > 30 && post < 330) {
+                    *y = -1.0f;                 /* stick down: toward camera */
+                } else if (post >= 330 && post < 380) {
+                    *buttons |= 0x2000;         /* CONT_G / Z: set bomb */
                 }
             }
         }

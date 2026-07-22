@@ -182,10 +182,12 @@ void arena_render_routine(void) {
         arena_export_tick_input(sx, sy, buttons);
         gPlayerObject->Pos.x += arena_export_player_x(0);   /* getter returns dx */
         gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
-        /* A1.2e: +180 — sim yaw vs game Rot.y are half-turn offset (player
-         * visibly ran facing backwards; user report 2026-07-22). */
+        /* A1.2e: sim yaw -> game Rot.y is a MIRROR (negation), not a half-turn:
+         * "+0" read opposite on E/W runs, "+180" read opposite on N/S runs
+         * (two user reports 2026-07-22 triangulate the sign flip; sim yaw 0 =
+         * -Z from the kick math, game turns the other way). */
         {
-            f32 fy = arena_export_player_yaw(0) + 180.0f;
+            f32 fy = 360.0f - arena_export_player_yaw(0);
             if (fy >= 360.0f) fy -= 360.0f;
             gPlayerObject->Rot.y = fy;
         }
@@ -335,7 +337,7 @@ void arena_render_routine(void) {
             for (i = 1; i < 4; i++) {
                 s32 slot = arena_export_puppet_get_slot(i);
                 if (slot >= 0) {
-                    f32 py = arena_export_puppet_yaw(i) + 180.0f;   /* same half-turn as player 0 */
+                    f32 py = 360.0f - arena_export_puppet_yaw(i);   /* same mirror as player 0 */
                     if (py >= 360.0f) py -= 360.0f;
                     gObjects[slot].Pos.x       = arena_export_puppet_wx(i);
                     gObjects[slot].Pos.y       = arena_export_puppet_wy(i);
