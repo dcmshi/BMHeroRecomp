@@ -37,6 +37,12 @@ float arena_bomb_wz(int i);
 void  arena_bomb_set_slot(int i, int slot);
 int   arena_bomb_get_slot(int i);
 int   arena_is_actor_slot(int slot);
+/* A1.2c slice 2: blast effects (patch-callable). */
+int   arena_spike_once(void);      /* 1 on first call only (ID-spike latch) */
+int   arena_blast_new(int i);      /* 1 once per blast birth; call all i every frame */
+float arena_blast_wx(int i);
+float arena_blast_wy(int i);
+float arena_blast_wz(int i);
 #ifdef __cplusplus
 }
 #endif

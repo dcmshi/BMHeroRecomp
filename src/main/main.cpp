@@ -72,6 +72,11 @@ extern "C" void arena_export_bomb_wz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_bomb_set_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_bomb_get_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_is_actor_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spike_once(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -799,6 +804,11 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_bomb_set_slot);
     REGISTER_FUNC(arena_export_bomb_get_slot);
     REGISTER_FUNC(arena_export_is_actor_slot);
+    REGISTER_FUNC(arena_export_spike_once);
+    REGISTER_FUNC(arena_export_blast_new);
+    REGISTER_FUNC(arena_export_blast_wx);
+    REGISTER_FUNC(arena_export_blast_wy);
+    REGISTER_FUNC(arena_export_blast_wz);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

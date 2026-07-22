@@ -127,3 +127,20 @@ extern "C" void arena_export_bomb_get_slot(uint8_t* rdram, recomp_context* ctx) 
 extern "C" void arena_export_is_actor_slot(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_is_actor_slot(_arg<0, int>(rdram, ctx)));
 }
+
+/* A1.2c slice 2: blast exports. */
+extern "C" void arena_export_spike_once(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_spike_once());
+}
+extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_new(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_wx(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_wy(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_blast_wz(_arg<0, int>(rdram, ctx)));
+}

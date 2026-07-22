@@ -37,6 +37,9 @@ namespace {
     /* A1.2c: 16 bomb actors, 1:1 with g_state.bombs[0..15]. */
     int   g_bomb_slot[ARENA_MAX_BOMBS] = {
         -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1 };
+    /* A1.2c slice 2: blast liveness last frame (edge detect) + spike latch. */
+    bool  g_blast_prev[ARENA_MAX_BLASTS] = {};
+    bool  g_spike_done = false;
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -227,4 +230,31 @@ extern "C" int arena_is_actor_slot(int slot) {
     for (int i = 1; i < ARENA_MAX_PLAYERS; i++) if (g_puppet_slot[i] == slot) return 1;
     for (int i = 0; i < ARENA_MAX_BOMBS;   i++) if (g_bomb_slot[i]   == slot) return 1;
     return 0;
+}
+
+/* A1.2c slice 2: blasts. Edge-detect per index (the patch calls blast_new for
+ * ALL 16 indices every frame, so prev-tracking inside the getter is sound). */
+extern "C" int arena_spike_once(void) {
+    if (g_spike_done) return 0;
+    g_spike_done = true;
+    return 1;
+}
+extern "C" int arena_blast_new(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return 0;
+    bool alive = g_state.blasts[i].ttl != 0;
+    bool was   = g_blast_prev[i];
+    g_blast_prev[i] = alive;
+    return (alive && !was) ? 1 : 0;
+}
+extern "C" float arena_blast_wx(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_x;
+    return g_origin_x + (qf(g_state.blasts[i].center.x) - g_ref_sx) * g_scale;
+}
+extern "C" float arena_blast_wy(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_y;
+    return g_origin_y + (qf(g_state.blasts[i].center.y) - g_ref_sy) * g_scale;
+}
+extern "C" float arena_blast_wz(int i) {
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_z;
+    return g_origin_z + (qf(g_state.blasts[i].center.z) - g_ref_sz) * g_scale_z;
 }
