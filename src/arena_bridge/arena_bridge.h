@@ -10,7 +10,7 @@ extern "C" {
 void arena_bridge_tick(void);   /* call once per VI/frame */
 void arena_bridge_set_battle_mode(int on);   /* menu sets this; tick reads it */
 int  arena_bridge_battle_active(void);        /* plain accessor for the export shim */
-void arena_bridge_tick_input(int sx, int sy, int jump, int bomb);  /* tick player 0 */
+void arena_bridge_tick_input(int sx, int sy, int buttons);  /* tick p0; buttons: b0 jump,b1 bomb,b2 set */
 float arena_get_player_x(int i);
 float arena_get_player_y(int i);
 float arena_get_player_z(int i);
@@ -29,6 +29,14 @@ float arena_puppet_wy(int i);
 float arena_puppet_wz(int i);
 float arena_puppet_yaw(int i);
 void  arena_dbg_u32(int tag, unsigned val);   /* A1.2b temp evidence logger */
+/* A1.2c bombs: state getters + slot table + actor-slot check (patch-callable). */
+int   arena_bomb_active(int i);
+float arena_bomb_wx(int i);
+float arena_bomb_wy(int i);
+float arena_bomb_wz(int i);
+void  arena_bomb_set_slot(int i, int slot);
+int   arena_bomb_get_slot(int i);
+int   arena_is_actor_slot(int slot);
 #ifdef __cplusplus
 }
 #endif

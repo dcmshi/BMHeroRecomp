@@ -11,11 +11,10 @@ extern "C" void arena_bridge_is_battle(uint8_t* rdram, recomp_context* ctx) {
 }
 
 extern "C" void arena_export_tick_input(uint8_t* rdram, recomp_context* ctx) {
-    int sx   = _arg<0, int>(rdram, ctx);
-    int sy   = _arg<1, int>(rdram, ctx);
-    int jump = _arg<2, int>(rdram, ctx);
-    int bomb = _arg<3, int>(rdram, ctx);
-    arena_bridge_tick_input(sx, sy, jump, bomb);
+    int sx      = _arg<0, int>(rdram, ctx);
+    int sy      = _arg<1, int>(rdram, ctx);
+    int buttons = _arg<2, int>(rdram, ctx);   /* b0 jump, b1 bomb, b2 set/kick */
+    arena_bridge_tick_input(sx, sy, buttons);
 }
 extern "C" void arena_export_player_x(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_get_player_x(_arg<0, int>(rdram, ctx)));
@@ -104,4 +103,27 @@ extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx) {
 }
 extern "C" void arena_export_dbg_u32(uint8_t* rdram, recomp_context* ctx) {
     arena_dbg_u32(_arg<0, int>(rdram, ctx), _arg<1, unsigned>(rdram, ctx));
+}
+
+/* A1.2c bomb exports (int args / float returns — no float args). */
+extern "C" void arena_export_bomb_active(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_bomb_active(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_bomb_wx(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_bomb_wx(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_bomb_wy(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_bomb_wy(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_bomb_wz(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_bomb_wz(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_bomb_set_slot(uint8_t* rdram, recomp_context* ctx) {
+    arena_bomb_set_slot(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+}
+extern "C" void arena_export_bomb_get_slot(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_bomb_get_slot(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_is_actor_slot(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_is_actor_slot(_arg<0, int>(rdram, ctx)));
 }

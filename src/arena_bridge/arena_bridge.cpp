@@ -32,8 +32,11 @@ namespace {
      * would mirror). g_ref_s* is player 0's sim pos at capture. */
     bool  g_puppets_ready = false;
     float g_origin_x = 0.0f, g_origin_y = 0.0f, g_origin_z = 0.0f;  /* frozen world anchor */
-    float g_ref_sx = 0.0f, g_ref_sz = 0.0f;                          /* frozen sim ref (p0) */
+    float g_ref_sx = 0.0f, g_ref_sy = 0.0f, g_ref_sz = 0.0f;         /* frozen sim ref (p0) */
     int   g_puppet_slot[ARENA_MAX_PLAYERS] = { -1, -1, -1, -1 };
+    /* A1.2c: 16 bomb actors, 1:1 with g_state.bombs[0..15]. */
+    int   g_bomb_slot[ARENA_MAX_BOMBS] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1 };
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -63,14 +66,16 @@ extern "C" void arena_bridge_tick(void) {
         proof("[arena] tick %u hash %08x\n", g_state.tick, arena_hash(&g_state));
 }
 
-extern "C" void arena_bridge_tick_input(int sx, int sy, int jump, int bomb) {
+/* buttons packs jump|bomb|set into one arg (the export ABI only passes 4 args,
+ * so we can't take them separately): bit0 jump, bit1 bomb, bit2 set/kick. */
+extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     ensure_init();
     Vec3q before = g_state.players[0].pos;
     /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
      * full -32,-32 stick). Idle players 1-3 must get real neutral or they run. */
     ArenaInput neutral = arena_input_pack(0, 0, 0, 0, 0);
     ArenaInput in[ARENA_MAX_PLAYERS] = { neutral, neutral, neutral, neutral };
-    in[0] = arena_input_pack(sx, sy, jump, bomb, 0);
+    in[0] = arena_input_pack(sx, sy, buttons & 1, (buttons >> 1) & 1, (buttons >> 2) & 1);
     arena_tick(&g_state, in);
     Vec3q after = g_state.players[0].pos;
     g_render_dx  = qf(after.x - before.x) * g_scale;
@@ -152,6 +157,7 @@ extern "C" void arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz) {
     ux.u = bx; uy.u = by; uz.u = bz;
     g_origin_x = ux.f; g_origin_y = uy.f; g_origin_z = uz.f;
     g_ref_sx = qf(g_state.players[0].pos.x);
+    g_ref_sy = qf(g_state.players[0].pos.y);   /* A1.2c: bomb arc height reference */
     g_ref_sz = qf(g_state.players[0].pos.z);
     g_puppets_ready = true;
     if (g_log) {
@@ -185,4 +191,33 @@ extern "C" void arena_dbg_u32(int tag, unsigned val) {
     std::printf("[dbg] tag=%d val=0x%08x (%u)\n", tag, val, val);
     std::fflush(stdout);
     if (g_log) { std::fprintf(g_log, "[dbg] tag=%d val=0x%08x (%u)\n", tag, val, val); std::fflush(g_log); }
+}
+
+/* A1.2c bombs: read g_state.bombs[i], mapped through the SAME frozen frame as
+ * the puppets (bombs live in the same sim space). Y is mapped too so the throw
+ * arc shows (unlike players, whose Y is left to the game). */
+extern "C" int arena_bomb_active(int i) {
+    if (i < 0 || i >= ARENA_MAX_BOMBS) return 0;
+    return g_state.bombs[i].state != BSTATE_FREE ? 1 : 0;
+}
+extern "C" float arena_bomb_wx(int i) {
+    if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_x;
+    return g_origin_x + (qf(g_state.bombs[i].pos.x) - g_ref_sx) * g_scale;
+}
+extern "C" float arena_bomb_wy(int i) {
+    if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y;
+    return g_origin_y + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
+}
+extern "C" float arena_bomb_wz(int i) {
+    if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_z;
+    return g_origin_z + (qf(g_state.bombs[i].pos.z) - g_ref_sz) * g_scale_z;
+}
+extern "C" void arena_bomb_set_slot(int i, int slot) { if (i >= 0 && i < ARENA_MAX_BOMBS) g_bomb_slot[i] = slot; }
+extern "C" int  arena_bomb_get_slot(int i)           { return (i >= 0 && i < ARENA_MAX_BOMBS) ? g_bomb_slot[i] : -1; }
+
+/* 1 if `slot` is one of our actors (player puppet or bomb) — for the boss sweep. */
+extern "C" int arena_is_actor_slot(int slot) {
+    for (int i = 1; i < ARENA_MAX_PLAYERS; i++) if (g_puppet_slot[i] == slot) return 1;
+    for (int i = 0; i < ARENA_MAX_BOMBS;   i++) if (g_bomb_slot[i]   == slot) return 1;
+    return 0;
 }
