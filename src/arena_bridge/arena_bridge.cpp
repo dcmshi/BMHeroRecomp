@@ -195,6 +195,19 @@ extern "C" void arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz) {
     }
 }
 extern "C" int  arena_puppet_ready(void)              { return g_puppets_ready ? 1 : 0; }
+
+/* A1.2d: spawn warmup gate. The render routine's FIRST invocation happens
+ * synchronously inside the level-enter function (func_800824A8 ->
+ * func_80000964 -> gDebugRoutine2), before the game heap is serviceable —
+ * calling the anim-instance path there hangs in malloc_game (symbolized
+ * stack, 2026-07-22). Gate the one-shot spawn block on ~1.5s of routine
+ * invocations so it runs only once the level loop is actually pumping.
+ * Process-lifetime latch, same as the rest of the puppet state. */
+static int g_spawn_warmup = 0;
+extern "C" int arena_spawn_gate(void) {
+    if (g_spawn_warmup < 90) { g_spawn_warmup++; return 0; }
+    return 1;
+}
 extern "C" void arena_puppet_set_slot(int i, int slot){ if (i >= 0 && i < ARENA_MAX_PLAYERS) g_puppet_slot[i] = slot; }
 extern "C" int  arena_puppet_get_slot(int i)          { return (i >= 0 && i < ARENA_MAX_PLAYERS) ? g_puppet_slot[i] : -1; }
 

@@ -83,6 +83,10 @@ extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx)
 extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_puppet_ready());
 }
+/* A1.2d: warmup gate for the one-shot spawn block (see arena_spawn_gate). */
+extern "C" void arena_export_spawn_gate(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_spawn_gate());
+}
 extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx) {
     arena_puppet_set_slot(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
 }

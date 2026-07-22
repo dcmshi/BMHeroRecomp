@@ -58,6 +58,7 @@ extern "C" void arena_export_bomber_yaw(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_spawn_placeholders_once(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spawn_gate(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_get_slot(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx);
@@ -796,6 +797,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_spawn_placeholders_once);
     REGISTER_FUNC(arena_export_puppet_capture);
     REGISTER_FUNC(arena_export_puppet_ready);
+    REGISTER_FUNC(arena_export_spawn_gate);
     REGISTER_FUNC(arena_export_puppet_set_slot);
     REGISTER_FUNC(arena_export_puppet_get_slot);
     REGISTER_FUNC(arena_export_puppet_wx);

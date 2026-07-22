@@ -17,6 +17,7 @@ DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
  * (patches must be stateless); we read placement back each frame. */
 DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz);
 DECLARE_FUNC(s32,  arena_export_puppet_ready);
+DECLARE_FUNC(s32,  arena_export_spawn_gate);   /* A1.2d: 1 only after ~90 frames (heap-ready) */
 DECLARE_FUNC(void, arena_export_puppet_set_slot, s32 i, s32 slot);
 DECLARE_FUNC(s32,  arena_export_puppet_get_slot, s32 i);
 DECLARE_FUNC(f32,  arena_export_puppet_wx, s32 i);
@@ -60,11 +61,19 @@ extern void func_8001ABF4(s32 arg0, s32 arg1, s32 arg2, struct UnkStruct8016C298
  * leaving little headroom. Raising the sim cap (A1.3) needs that freed first
  * (integration notes §8). */
 #define BOMB_POOL 6
-/* Follow-up lead (real bomber mesh, integration notes §8): the player-bomber is
- * gFileArray[1] (func_8001BD44 cfg 0x13); D_80101E8C @ 0x80101E8C is A bomber
- * anim config, but it's a multi-part SKELETAL model — a single bind draws a
- * malformed model (white-screen RSP abort). Needs the real multi-part load
- * (4DFF0.c) + per-part skeletal binds + an idle pose. Deferred. */
+/* A1.2d real bomber. The bomber is ONE object, ONE part; the mesh is loaded by
+ * the spawner from an ObjSpawnInfo, and the anim instance is bound with
+ * func_8001C0EC (-> func_8001BE6C) + func_8001ABF4 — but the descriptor and
+ * tables MUST come from the game's own registry, gObjInfo[objID] (named data
+ * symbol, patch-visible), exactly as the game's generic binder func_8002BE04
+ * (2BF00.c:227) does. Hardcoding the MENU bomber's table (D_80115F34) hung
+ * forever: file 1's layout is context-dependent, and func_800122F0 parses
+ * alloc sizes straight from whatever the offset points at (garbage -> endless
+ * malloc_game walk; forensic tags 43-46, 2026-07-22). OBJ_MIR_BOMBER is the
+ * training-room mirror bomberman — a real in-level NPC with the full bomber
+ * model + anims. Its behaviour is NOT wanted: the puppet keeps the inert door
+ * objID and only borrows the entry's mesh + anim tables. */
+extern void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u32* animTable);
 
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
@@ -124,8 +133,13 @@ void arena_render_routine(void) {
 
         /* Spawn the 3 actors once. Freeze the world anchor (player's spawn Pos,
          * passed as u32 bits — the export ABI can't take float args) + sim ref,
-         * then proper-spawn + anim-bind each into a free [14..77] slot. */
-        if (!arena_export_puppet_ready()) {
+         * then proper-spawn + anim-bind each into a free [14..77] slot.
+         * A1.2d: gated behind ~90 warmup frames — the routine's FIRST call runs
+         * synchronously inside level-enter (func_800824A8 -> func_80000964),
+         * where the anim-instance path (func_8001C0EC -> func_800122F0) hangs
+         * in malloc_game (symbolized stack, 2026-07-22). Spawn only once the
+         * level loop is actually pumping. */
+        if (!arena_export_puppet_ready() && arena_export_spawn_gate()) {
             union { f32 f; u32 u; } cx, cy, cz;
             cx.f = gPlayerObject->Pos.x;
             cy.f = gPlayerObject->Pos.y;
@@ -135,14 +149,67 @@ void arena_render_routine(void) {
             s32 i;
             for (i = 1; i < 4; i++) {   /* players 1-3 */
                 struct ObjSpawnInfo info;
-                info.unk0 = 0; info.unk2 = OBJ_TOBIRA1_O; info.unk4 = 9;   /* bomb placeholder mesh */
-                info.unk6 = 0; info.unk7 = 0; info.unk8 = 0; info.unk9 = 0; info.unkA = 0;
+                s32 bomber_id;   /* A1.2d: picked gObjInfo entry, -1 = none */
+                info.unk0 = 0; info.unk2 = OBJ_TOBIRA1_O;
+                /* default to the bomb placeholder; the i==1 branch below upgrades
+                 * it to a bomber entry if a populated one exists */
+                info.unk4 = 9; info.unk6 = 0;
+                info.unk7 = 0; info.unk8 = 0; info.unk9 = 0; info.unkA = 0;
+                if (i == 1) {   /* A1.2d spike: player 1 = real bomber. Candidate
+                                 * gObjInfo entries scanned null-safe (many entries
+                                 * have unk38 == NULL — deref of a null/non-KSEG0
+                                 * pointer is a HOST access violation in recomp'd
+                                 * code, crash 2026-07-22). unk2 stays the door
+                                 * objID — the NPC behaviour is unwanted. */
+                    s32 cand[4];
+                    s32 k;
+                    cand[0] = OBJ_MIR_BOMBER; cand[1] = OBJ_EVBOMBER;
+                    cand[2] = OBJ_EVS_BOM;    cand[3] = OBJ_BOMBER7;
+                    bomber_id = -1;
+                    for (k = 0; k < 4; k++) {
+                        u32 si = (u32) gObjInfo[cand[k]].unk38;
+                        u32 ap = (u32) gObjInfo[cand[k]].animPtr;
+                        arena_export_dbg_u32(50 + k, si);   /* spawn-info ptr */
+                        arena_export_dbg_u32(60 + k, ap);   /* anim table ptr */
+                        if (bomber_id < 0 && si != 0 && ap != 0)
+                            bomber_id = cand[k];
+                    }
+                    arena_export_dbg_u32(43, (u32)bomber_id);   /* the pick (-1 = none) */
+                    if (bomber_id >= 0) {
+                        struct ObjSpawnInfo* bi = gObjInfo[bomber_id].unk38;
+                        info.unk0 = bi->unk0; info.unk4 = bi->unk4; info.unk6 = bi->unk6;
+                        info.unk7 = bi->unk7; info.unk8 = bi->unk8; info.unk9 = bi->unk9;
+                        info.unkA = bi->unkA;
+                        arena_export_dbg_u32(44, ((u32)bi->unk0 << 16) | (u16)bi->unk4); /* part|file */
+                    }
+                }
                 {
                     s32 slot = func_80027464(1, &info,
                                              gPlayerObject->Pos.x,
                                              gPlayerObject->Pos.y,
                                              gPlayerObject->Pos.z, 0.0f);
-                    if (slot >= 0) func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bind anim */
+                    arena_export_dbg_u32(40, (u32)slot);   /* per-puppet spawn slot */
+                    if (slot >= 0) {
+                        if (i == 1 && bomber_id >= 0) {
+                            /* Bind model-anim + texanim exactly as the game's own
+                             * generic binder does (func_8002BE04): per-objID gObjInfo
+                             * tables, null-guarded. */
+                            void* ap  = gObjInfo[bomber_id].animPtr;
+                            void* ms  = gObjInfo[bomber_id].moveSpeed;
+                            s32   prt = gObjInfo[bomber_id].unk38->unk0;
+                            if (ap != NULL) {
+                                func_8001C0EC(slot, prt, 0,
+                                              gObjInfo[bomber_id].unk38->unk4, (u32*)ap);
+                                arena_export_dbg_u32(41, 0);
+                            }
+                            if (ms != NULL) {
+                                func_8001ABF4(slot, 0, prt, (struct UnkStruct8016C298_1*)ms);
+                                arena_export_dbg_u32(42, 0);
+                            }
+                        } else {
+                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bind anim */
+                        }
+                    }
                     arena_export_puppet_set_slot(i, slot);
                 }
             }

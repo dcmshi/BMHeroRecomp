@@ -22,6 +22,7 @@ float arena_get_bomber_yaw(int i);
 /* A1.2b puppet actors: state + frozen-origin world placement (patch-callable). */
 void  arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz);
 int   arena_puppet_ready(void);
+int   arena_spawn_gate(void);   /* A1.2d: 1 only after ~90 routine frames (heap-ready gate) */
 void  arena_puppet_set_slot(int i, int slot);
 int   arena_puppet_get_slot(int i);
 float arena_puppet_wx(int i);
