@@ -8,6 +8,9 @@
 // Native bridge import (registered in main.cpp). Returns 1 in battle mode.
 DECLARE_FUNC(s32, arena_bridge_is_battle);
 
+extern void (*gDebugRoutine1)(void);   /* draw dispatcher hook (17930.c:1561) */
+extern void (*gDebugRoutine2)(void);   /* update dispatcher hook (17930.c:1796) */
+
 #define ARENA_WARP_MAP 15  /* MAP_NITROS_1 boss arena (flat/open).
                             * History: 2 MAP_BATTLE_ROOM (pits aborted actor
                             * collision); 71 MAP_MIRROR_ROOM tried for A1.2d
@@ -24,6 +27,16 @@ DECLARE_FUNC(s32, arena_bridge_is_battle);
 RECOMP_PATCH void func_80081C50(void) {
     if (arena_bridge_is_battle()) {
         gCurrentLevel = ARENA_WARP_MAP;
+        /* Stale-routine land mine (2 symbolized dumps, 2026-07-22): during the
+         * load window the frame pump can fire gDebugRoutine1() while it still
+         * points at the PREVIOUS screen's routine — if that overlay was
+         * unloaded, the recomp aborts (get_function -> exit; dumps name
+         * func_8001D9E4, the draw dispatcher). Both dispatchers NULL-check
+         * (17930.c:1561/1796), so park them here at load prep; the level-enter
+         * patch (func_800824A8) reassigns them. Battle-scoped — campaign keeps
+         * upstream behavior. */
+        gDebugRoutine1 = NULL;
+        gDebugRoutine2 = NULL;
         /* NOTE (2026-07-21): tried neutering gLevelInfo[level]->unk24/unk28
          * (the loader's spawn hooks) to kill the boss before init — but those
          * hooks also do draw/level setup: the arena then white-screens
