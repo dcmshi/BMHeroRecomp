@@ -93,8 +93,15 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
             qf(g_state.players[1].pos.x), qf(g_state.players[1].pos.z),
             qf(g_state.players[2].pos.x), qf(g_state.players[2].pos.z),
             qf(g_state.players[3].pos.x), qf(g_state.players[3].pos.z));
+        /* A1.2c telemetry: live-bomb count (confirms throw/set produce bombs). */
+        int nb = 0;
+        for (int bi = 0; bi < ARENA_MAX_BOMBS; bi++)
+            if (g_state.bombs[bi].state != BSTATE_FREE) nb++;
+        std::fprintf(g_log, "[bombs] t%u live=%d p0.held=%d\n",
+                     g_state.tick, nb, g_state.players[0].held_bomb);
         std::fflush(g_log);
     }
+    (void)buttons;
 }
 
 /* getters return the last tick's scaled displacement (dx/dz) and abs yaw;
