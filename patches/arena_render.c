@@ -38,7 +38,7 @@ extern void func_8001ABF4(s32 arg0, s32 arg1, s32 arg2, struct UnkStruct8016C298
 /* Flip to 1 to re-enable the placeholder spawn experiment (see below). */
 #define ARENA_SPAWN_TEST 1
 /* BISECT: 0 = spawn 3 but park them (no per-frame positioning); 1 = position. */
-#define ARENA_POSITION 0
+#define ARENA_POSITION 1
 
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
@@ -50,16 +50,17 @@ extern void (*gDebugRoutine2)(void);
 
 /* Per-frame in-level update wrapper: run the original routine, then in battle
  * mode drive our sim from the controller and puppet player 0 (the campaign
- * player object) by the sim's per-frame displacement (X/Z; Y left to the game
- * so it stays grounded and the camera follows). This is the A1.2a render bridge.
+ * player object) by the sim's per-frame displacement (X/Z; Y left to the game).
  *
- * A1.2b status: puppeting 3 MORE bombers is blocked on the game's object system
- * (see docs/bmhero-recomp-integration-notes.md §8): the player object can't be
- * duplicated (single-player update logic), and raw-cloning a simple resident
- * object (door/plate) into a free slot renders but crashes because the copied
- * spawn-group links (unk10E) are needed for the draw yet invalid for a
- * duplicate. The sound path is a proper game spawn (func_80027464) with a valid
- * ObjSpawnInfo whose model file is resident — deferred as its own RE task. */
+ * A1.2b: also spawns 3 extra actors (players 1-3) into gObjects[14..77] via the
+ * game's own func_80027464, binds each one's animation with func_8001ABF4 (the
+ * piece the general spawn omits for animated models — without it the draw
+ * aborts), and positions them from the sim each frame against a frozen world
+ * origin (no mirror). WORKS on a flat arena (warped to MAP_NITROS_1); the Battle
+ * Room's pits aborted per-object collision on off-platform actors. Detail:
+ * docs/bmhero-recomp-integration-notes.md §8. TODO: suppress the Nitros boss;
+ * swap the bomb placeholder mesh (gFileArray[9]) for the bomber (gFileArray[1]);
+ * inert objID (door behaviour still runs). */
 void arena_render_routine(void) {
     func_80024744();
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
@@ -94,7 +95,7 @@ void arena_render_routine(void) {
              * spawn omits for animated models — without it the draw aborts). */
             {
                 s32 i;
-                for (i = 1; i < 2; i++) {   /* ONE actor, to visually confirm the draw */
+                for (i = 1; i < 4; i++) {   /* players 1-3 */
                     struct ObjSpawnInfo info;
                     info.unk0 = 0; info.unk2 = OBJ_TOBIRA1_O; info.unk4 = 9;
                     info.unk6 = 0; info.unk7 = 0; info.unk8 = 0; info.unk9 = 0; info.unkA = 0;

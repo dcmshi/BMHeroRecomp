@@ -8,7 +8,7 @@
 // Native bridge import (registered in main.cpp). Returns 1 in battle mode.
 DECLARE_FUNC(s32, arena_bridge_is_battle);
 
-#define ARENA_WARP_MAP 2   /* MAP_BATTLE_ROOM; change to fall back (Task 3) */
+#define ARENA_WARP_MAP 15  /* MAP_NITROS_1 boss arena (flat/open); was 2 MAP_BATTLE_ROOM */
 
 // A1.1b-ii: func_80081C50 seeds the next-level var (D_8016E432) and the spawn
 // coords from gCurrentLevel, just before the loader (func_80081D78) reads
