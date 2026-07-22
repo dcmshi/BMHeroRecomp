@@ -107,13 +107,6 @@ extern "C" void arena_draw_gate_reset(void) { g_draw_warmup = 0; }
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
-    /* A1.2f probe forensics (TEMPORARY): prove whether injected input reaches
-     * the sim at all — log the first nonzero stick once. */
-    static bool s_first_input_logged = false;
-    if (!s_first_input_logged && (sx != 0 || sy != 0)) {
-        s_first_input_logged = true;
-        if (g_log) { std::fprintf(g_log, "[input] first nonzero sx=%d sy=%d\n", sx, sy); std::fflush(g_log); }
-    }
     Vec3q before = g_state.players[0].pos;
     /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
      * full -32,-32 stick). Idle players 1-3 must get real neutral or they run. */
