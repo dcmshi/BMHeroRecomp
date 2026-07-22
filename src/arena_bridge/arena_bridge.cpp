@@ -281,7 +281,14 @@ extern "C" float arena_bomb_wx(int i) {
 }
 extern "C" float arena_bomb_wy(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y;
-    return g_origin_y + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
+    float w = g_origin_y + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
+    /* A1.2e: floor-clamp. ref_sy is sampled at capture; any positive ref puts
+     * ground bombs (sim y=0) BELOW the game floor — set bombs were invisible
+     * while thrown bombs (arcing above) showed (user log 2026-07-22: Q presses
+     * reached the sim, live=1..3, nothing on screen). origin_y = the grounded
+     * player height at capture = the floor. */
+    if (w < g_origin_y) w = g_origin_y;
+    return w;
 }
 extern "C" float arena_bomb_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_z;
@@ -337,7 +344,9 @@ extern "C" float arena_blast_wx(int i) {
 }
 extern "C" float arena_blast_wy(int i) {
     if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_y;
-    return g_origin_y + (qf(g_state.blasts[i].center.y) - g_ref_sy) * g_scale;
+    float w = g_origin_y + (qf(g_state.blasts[i].center.y) - g_ref_sy) * g_scale;
+    if (w < g_origin_y) w = g_origin_y;   /* same floor-clamp as bombs */
+    return w;
 }
 extern "C" float arena_blast_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_z;
