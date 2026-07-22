@@ -606,6 +606,48 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
     recompui::renderer::trigger_texture_pack_update();
 }
 
+/* A1.2f soak: synthetic frontend mash. While ARENA_AUTO_BATTLE is set and the
+ * arena spawn block hasn't run yet (arena_puppet_ready()==0), OR START/A
+ * presses (4 polls on / 4 off, alternating buttons) into controller 0 —
+ * injected at the input-callback level, below SDL, so no window focus is
+ * needed. Self-stops once in-arena; harmless jitter before that. */
+static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+    bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
+    static const bool soak_active = []() {
+        const char* v = std::getenv("ARENA_AUTO_BATTLE");
+        return v != nullptr && v[0] == '1';
+    }();
+    if (soak_active && ok && controller_num == 0 && !arena_routine_seen()) {
+        static uint32_t polls = 0;
+        polls++;
+        if ((polls >> 2) & 1) {                        /* 4 polls on / 4 off */
+            *buttons |= ((polls >> 3) & 1) ? 0x1000    /* START */
+                                           : 0x8000;   /* A */
+        }
+    }
+    return ok;
+}
+
+/* A1.2f soak: deferred auto-battle. ARENA_AUTO_BATTLE ("1" = with frontend
+ * mash, "2" = auto-battle only) fires the Battle menu option's exact body on
+ * the ~60th launcher update frame — mimicking a human clicking after the UI
+ * settles. Firing at launcher INIT instead dies ~11s in (dumpless exit). */
+static void soak_launcher_update(recompui::LauncherMenu *menu) {
+    banjo::launcher_animation_update(menu);
+    static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
+    static int frames = 0;
+    static bool fired = false;
+    if (soak && (soak[0] == '1' || soak[0] == '2') && !fired && ++frames >= 60) {
+        std::u8string gid = supported_games[0].game_id;
+        if (recomp::is_rom_valid(gid)) {
+            fired = true;
+            arena_bridge_set_battle_mode(1);
+            recomp::start_game(gid, {});
+            recompui::hide_all_contexts();
+        }
+    }
+}
+
 void on_launcher_init(recompui::LauncherMenu *menu) {
     auto game_options_menu = menu->init_game_options_menu(
         supported_games[0].game_id,
@@ -631,6 +673,10 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     });
 
     game_options_menu->set_width(30, recompui::Unit::Percent);
+
+    /* A1.2f soak: auto-battle fires from soak_launcher_update (deferred to the
+     * ~60th launcher frame) — starting the game inside THIS init callback dies
+     * ~11s in with a dumpless exit (init race, measured 3/3). */
 
     for (auto option : game_options_menu->get_options()) {
         option->set_justify_content(recompui::JustifyContent::FlexEnd);
@@ -838,7 +884,7 @@ int main(int argc, char** argv) {
     banjo::init_config();
 
     recompui::register_launcher_init_callback(on_launcher_init);
-    recompui::register_launcher_update_callback(banjo::launcher_animation_update);
+    recompui::register_launcher_update_callback(soak_launcher_update);   /* A1.2f: wraps banjo update */
 
     recomp::rsp::callbacks_t rsp_callbacks{
         .get_rsp_microcode = get_rsp_microcode,
@@ -865,7 +911,7 @@ int main(int argc, char** argv) {
 
     ultramodern::input::callbacks_t input_callbacks{
         .poll_input = recompinput::poll_inputs,
-        .get_input = recompinput::profiles::get_n64_input,
+        .get_input = soak_get_n64_input,   /* A1.2f: wraps get_n64_input (see above) */
         .set_rumble = recompinput::set_rumble,
         .get_connected_device_info = get_connected_device_info,
     };

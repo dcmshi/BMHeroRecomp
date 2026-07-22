@@ -78,7 +78,16 @@ extern "C" void arena_bridge_tick(void) {
 
 /* buttons packs jump|bomb|set into one arg (the export ABI only passes 4 args,
  * so we can't take them separately): bit0 jump, bit1 bomb, bit2 set/kick. */
+/* A1.2f soak: the render routine's first call here = the battle level is
+ * running — the signal the frontend mash keys off (stopping at puppet_ready
+ * instead let the mash's START presses PAUSE the game in-level, which halts
+ * the update dispatcher and freezes the spawn warmup: a pause/unpause
+ * livelock, seen on screen 2026-07-22). */
+static bool g_routine_seen = false;
+extern "C" int arena_routine_seen(void) { return g_routine_seen ? 1 : 0; }
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
+    g_routine_seen = true;
     ensure_init();
     Vec3q before = g_state.players[0].pos;
     /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
