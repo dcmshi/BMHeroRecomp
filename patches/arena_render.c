@@ -115,6 +115,26 @@ void arena_render_routine(void) {
     func_80024744();
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        /* A1.2e phase-1 (TEMPORARY, removed in cleanup): camera forensics.
+         * Logged only while L (E key) is held so the human samples exactly
+         * where it matters. Floats logged as bit patterns. tags:
+         * 70 eye.x  71 eye.z  72 at.x  73 at.z  74 fwd.x  75 fwd.z (normd) */
+        if (gActiveContButton & CONT_L) {
+            union { f32 f; u32 u; } v;
+            f32 cfx = gView.at.x - gView.eye.x;
+            f32 cfz = gView.at.z - gView.eye.z;
+            f32 cl2 = cfx * cfx + cfz * cfz;
+            v.f = gView.eye.x; arena_export_dbg_u32(70, v.u);
+            v.f = gView.eye.z; arena_export_dbg_u32(71, v.u);
+            v.f = gView.at.x;  arena_export_dbg_u32(72, v.u);
+            v.f = gView.at.z;  arena_export_dbg_u32(73, v.u);
+            if (cl2 > 0.0001f) {
+                f32 cinv = 1.0f / sqrtf(cl2);
+                v.f = cfx * cinv; arena_export_dbg_u32(74, v.u);
+                v.f = cfz * cinv; arena_export_dbg_u32(75, v.u);
+            }
+        }
+
         /* N64 stick (~+/-80) -> sim stick (+/-31); sim stick up = -Z */
         s32 sx = (s32)(gActiveContStickX * (31.0f / 80.0f));
         s32 sy = (s32)(gActiveContStickY * (31.0f / 80.0f));
