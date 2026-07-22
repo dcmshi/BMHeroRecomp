@@ -33,6 +33,14 @@ DECLARE_FUNC(void, arena_export_bomb_set_slot, s32 i, s32 slot);
 DECLARE_FUNC(s32,  arena_export_bomb_get_slot, s32 i);
 DECLARE_FUNC(s32,  arena_export_is_actor_slot, s32 slot);
 
+/* A1.2c slice 2: blast exports + the game effect spawner */
+DECLARE_FUNC(s32,  arena_export_spike_once);
+DECLARE_FUNC(s32,  arena_export_blast_new, s32 i);
+DECLARE_FUNC(f32,  arena_export_blast_wx, s32 i);
+DECLARE_FUNC(f32,  arena_export_blast_wy, s32 i);
+DECLARE_FUNC(f32,  arena_export_blast_wz, s32 i);
+extern void func_80081468(s32 id, f32 x, f32 y, f32 z);   /* spawn effect by ID at pos */
+
 /* Game proper-spawn: scans gObjects[14..77], loads mesh from gFileArray[info->unk4]. */
 extern s32 func_80027464(s32 count, struct ObjSpawnInfo* info, f32 x, f32 y, f32 z, f32 rotY);
 /* Animation bind (Unk148 instance) — the piece the general spawn omits for
@@ -185,6 +193,19 @@ void arena_render_routine(void) {
                         gObjects[slot].actionState = ACTION_NONE;   /* hidden */
                     }
                 }
+            }
+        }
+
+        /* EFFECT-ID SPIKE (temporary): first Q press spawns one effect of each
+         * candidate ID 0x2BC..0x2CD in two rows of 9 around the player.
+         * Layout key: col = idx%9 (x: -400..+400 step 100), row = idx/9
+         * (z: +150 near row = IDs 2BC..2C4, +300 far row = 2C5..2CD). */
+        if ((gActiveContButton & CONT_G) && arena_export_spike_once()) {
+            s32 idx;
+            for (idx = 0; idx < 18; idx++) {
+                f32 ex = gPlayerObject->Pos.x + ((idx % 9) * 100.0f - 400.0f);
+                f32 ez = gPlayerObject->Pos.z + 150.0f + ((idx / 9) * 150.0f);
+                func_80081468(0x2BC + idx, ex, gPlayerObject->Pos.y, ez);
             }
         }
     }
