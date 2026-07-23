@@ -635,10 +635,16 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
             if (mode && mode[0] == '3') {
                 static uint32_t post = 0;
                 post++;
-                if (post > 30 && post < 330) {
-                    *y = -1.0f;                 /* stick down: toward camera */
-                } else if (post >= 330 && post < 380) {
-                    *buttons |= 0x2000;         /* CONT_G / Z: set bomb */
+                if (post > 30 && post < 400) {
+                    /* A1.3 facing drift probe: hold a FIXED world stick
+                     * direction (down = toward camera) + L so the facing
+                     * forensics log; the player runs across the arena and the
+                     * rail camera swings on its own — the log then shows
+                     * whether applied Rot.y stays world-constant (correct;
+                     * apparent drift is just the camera orbit) or tracks the
+                     * camera yaw (real coupling to fix). */
+                    *y = -1.0f;                 /* fixed stick: toward camera */
+                    *buttons |= 0x0020;         /* CONT_L: enable facing forensics */
                 }
             }
         }

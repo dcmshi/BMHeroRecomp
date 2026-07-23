@@ -141,13 +141,19 @@ void arena_render_routine(void) {
         gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
         /* A1.2e: Rot.y = 180 - sim_yaw, DERIVED (not guessed) from the game's
          * own movement math: game moves along (+sin th, +cos th) (2BF00.c:480),
-         * the sim along (+sin yaw, -cos yaw) (arena_sim.c kick math). Equate:
-         * th = 180 - yaw (sin(180-y)=sin y, cos(180-y)=-cos y). */
-        {
-            f32 fy = 180.0f - arena_export_player_yaw(0);
-            if (fy < 0.0f) fy += 360.0f;
-            gPlayerObject->Rot.y = fy;
-        }
+         * the sim along (+sin yaw, -cos yaw) (arena_sim.c kick math): th=180-yaw
+         * preserves movement DIRECTION. A1.3 facing (user feel-tests 2026-07-23):
+         * Facing = the GAME'S OWN moveAngle, copied 1:1 (user's suggestion).
+         * The game's player update (func_80024744, called above) computes
+         * gPlayerObject->moveAngle authentically from the camera-rotated stick
+         * every frame; the probe verified it's live and correct in the arena
+         * (moveAngle = Math_Atan2f(Vel.x,Vel.z), e.g. 218.3 for Vel(-11.16,
+         * -14.12)). Deriving facing from our sim yaw or from dx/dz fought the
+         * gradual-turn lag and angle-convention mismatches (read 90deg then
+         * 45deg off). Copying the game's own facing sidesteps all of it and IS
+         * authentic by construction. We still drive POSITION from the sim
+         * (dx/dz); only facing borrows the game's value. */
+        gPlayerObject->Rot.y = gPlayerObject->moveAngle;
 
         /* Spawn the 3 actors once. Freeze the world anchor (player's spawn Pos,
          * passed as u32 bits — the export ABI can't take float args) + sim ref,
@@ -294,8 +300,16 @@ void arena_render_routine(void) {
             for (i = 1; i < 4; i++) {
                 s32 slot = arena_export_puppet_get_slot(i);
                 if (slot >= 0) {
-                    f32 py = 180.0f - arena_export_puppet_yaw(i);   /* same derivation as player 0 */
-                    if (py < 0.0f) py += 360.0f;
+                    /* Puppet facing is a yaw-derived placeholder. Player 0 copies
+                     * the game's own moveAngle, but puppets aren't gPlayerObject
+                     * (no game moveAngle) and are POSITIONED absolutely, so no
+                     * per-frame delta is available. It's invisible anyway: puppets
+                     * are rotationally-symmetric bomb-mesh placeholders (real
+                     * bomber mesh deferred, A1.2d §8.5b). Revisit facing when the
+                     * bomber mesh lands (add per-puppet dx/dz exports + moveAngle). */
+                    f32 py = 90.0f - arena_export_puppet_yaw(i);
+                    if (py >= 360.0f) py -= 360.0f;
+                    if (py < 0.0f)    py += 360.0f;
                     gObjects[slot].Pos.x       = arena_export_puppet_wx(i);
                     gObjects[slot].Pos.y       = arena_export_puppet_wy(i);
                     gObjects[slot].Pos.z       = arena_export_puppet_wz(i);
