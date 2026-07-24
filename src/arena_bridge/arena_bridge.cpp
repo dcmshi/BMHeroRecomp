@@ -47,6 +47,16 @@ namespace {
     int   g_spike_idx = 0;
     /* A1.2c slice 2 fallback: 4 pooled blast actors (bomb mesh, scaled). */
     int   g_blast_slot[4] = { -1, -1, -1, -1 };
+    /* A1.4 set-anim edge: a bomb going FREE->SETTLED in one tick (owner==i) is a
+     * SET event (a set places directly to SETTLED at the player's feet, sim
+     * arena_sim.c:240; thrown bombs pass through AIRBORNE first, so they don't
+     * match). Prev-state tracked here (patches are stateless) mirroring
+     * g_blast_prev; the edge is latched per player in tick_input and read-and-
+     * cleared by arena_set_new so it fires once per event. Kick has NO game anim
+     * (integration notes §8.5c) so only the set edge is exposed. Pure read of sim
+     * state — no gameplay change, pinned hash 5f500fcb holds. */
+    uint8_t g_bomb_prev_state[ARENA_MAX_BOMBS] = {};
+    int     g_set_edge[ARENA_MAX_PLAYERS] = { 0, 0, 0, 0 };
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -118,6 +128,17 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_render_dx  = qf(after.x - before.x) * g_scale;
     g_render_dz  = qf(after.z - before.z) * g_scale_z;
     g_render_yaw = (float)g_state.players[0].yaw * (360.0f / 65536.0f);
+
+    /* A1.4: latch a set edge for each player whose bomb went FREE->SETTLED this
+     * tick (the set-placement transition). arena_set_new(i) reads-and-clears. */
+    for (int b = 0; b < ARENA_MAX_BOMBS; b++) {
+        uint8_t now = g_state.bombs[b].state;
+        if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
+            int o = g_state.bombs[b].owner;
+            if (o >= 0 && o < ARENA_MAX_PLAYERS) g_set_edge[o] = 1;
+        }
+        g_bomb_prev_state[b] = now;
+    }
 
     /* A1.2b diag: are the sim's players 1-3 holding their corners, or does the
      * convergence come from the game's object update? Log all 4 once a second. */
@@ -358,3 +379,27 @@ extern "C" float arena_blast_wr(int i) {
 }
 extern "C" void arena_blastactor_set_slot(int i, int slot) { if (i >= 0 && i < 4) g_blast_slot[i] = slot; }
 extern "C" int  arena_blastactor_get_slot(int i)           { return (i >= 0 && i < 4) ? g_blast_slot[i] : -1; }
+
+/* A1.4: 1 exactly once per player-i set-bomb event (FREE->SETTLED edge latched
+ * in tick_input). Read-and-clear so it fires once. Kick has no game anim. */
+extern "C" int arena_set_new(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0;
+    int e = g_set_edge[i];
+    g_set_edge[i] = 0;
+    return e;
+}
+/* A1.4 auto-verify: burst-log the player's live anim (index+frame) for a few
+ * frames on each index CHANGE, so arena-soak.ps1 can assert idx->29 (the set
+ * pose) with the frame counter advancing, without flooding every frame.
+ * Temporary probe evidence, mirrors arena_dbg_u32. */
+extern "C" void arena_dbg_anim(int idx, int frame) {
+    static int last  = -1;
+    static int burst = 0;
+    if (idx != last) { last = idx; burst = 8; }
+    if (burst > 0) {
+        burst--;
+        std::printf("[anim] idx=%d frame=%d\n", idx, frame);
+        std::fflush(stdout);
+        if (g_log) { std::fprintf(g_log, "[anim] idx=%d frame=%d\n", idx, frame); std::fflush(g_log); }
+    }
+}

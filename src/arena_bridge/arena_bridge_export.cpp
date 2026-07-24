@@ -173,3 +173,11 @@ extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_blast_wz(_arg<0, int>(rdram, ctx)));
 }
+
+/* A1.4: set-bomb anim edge + anim-state probe logger. */
+extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_set_new(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx) {
+    arena_dbg_anim(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+}

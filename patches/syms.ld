@@ -94,3 +94,5 @@ arena_export_blastactor_get_slot = 0x8F0001BC;
 arena_export_spawn_gate = 0x8F0001C0;
 arena_export_draw_gate = 0x8F0001C4;
 arena_export_draw_gate_reset = 0x8F0001C8;
+arena_export_set_new = 0x8F0001CC;
+arena_export_dbg_anim = 0x8F0001D0;

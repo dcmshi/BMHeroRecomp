@@ -53,6 +53,9 @@ int   arena_blast_active(int i);   /* ttl != 0 */
 float arena_blast_wr(int i);       /* world-units current blast radius */
 void  arena_blastactor_set_slot(int i, int slot);   /* 4 pooled blast actors */
 int   arena_blastactor_get_slot(int i);
+/* A1.4 set-bomb animation (patch-callable). */
+int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
+void  arena_dbg_anim(int idx, int frame);   /* burst-log live player anim idx+frame */
 #ifdef __cplusplus
 }
 #endif

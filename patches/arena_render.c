@@ -77,6 +77,21 @@ extern void func_8001ABF4(s32 arg0, s32 arg1, s32 arg2, struct UnkStruct8016C298
  * objID and only borrows the entry's mesh + anim tables. */
 extern void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u32* animTable);
 
+/* A1.4 set-bomb animation. On a sim set edge for player 0, play the game's own
+ * set/drop-bomb pose on gPlayerObject: code_extra_0 anim 29, bank 1, table
+ * D_80115808 — the EXACT trigger form proven by the fork's teleporter_obj.c
+ * (same call, anim 7). D_80115808 resolves in patches (it's in data_dump.toml),
+ * so no literal-address workaround (§8.2) is needed for the table. The read-back
+ * getters func_8001B880/62C resolve as functions and read the live model-anim
+ * record (unk14 index / unk24 frame @ +2/frame) for the auto-verify probe. Kick
+ * has NO game anim (integration notes §8.5c) — the player keeps locomotion, no
+ * trigger. */
+extern s32 D_80115808[];                          /* code_extra_0 player anim table */
+extern s32 func_8001B880(s32 objId, s32 part);    /* live anim index (unk14) */
+extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (unk24) */
+DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
+DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log anim idx+frame */
+
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
 extern void func_8001ECB8(void);
@@ -154,6 +169,25 @@ void arena_render_routine(void) {
          * authentic by construction. We still drive POSITION from the sim
          * (dx/dz); only facing borrows the game's value. */
         gPlayerObject->Rot.y = gPlayerObject->moveAngle;
+
+        /* A1.4: set-bomb animation for player 0. The sim tick above (line ~139)
+         * latched a set edge if player 0 placed a bomb this frame (bomb
+         * FREE->SETTLED). Overlay the game's own set/drop pose (anim 29) on
+         * gPlayerObject once per event; the walker (func_80024744, above) returns
+         * to locomotion on its next state change, so we don't re-trigger. Always
+         * read-and-clear the edge (no accumulation); only trigger/read-back once
+         * the player's model-anim record is bound (Unk140[0] >= 0 — a negative
+         * slot would host-AV in func_8001C0EC / the getters during level-enter). */
+        {
+            s32 set_edge = arena_export_set_new(0);
+            if (gPlayerObject->Unk140[0] >= 0) {
+                if (set_edge)
+                    func_8001C0EC(0, 0, 29, 1, (u32*)D_80115808);
+                /* Auto-verify probe (temporary): burst-log the live anim index +
+                 * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
+                arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0));
+            }
+        }
 
         /* Spawn the 3 actors once. Freeze the world anchor (player's spawn Pos,
          * passed as u32 bits — the export ABI can't take float args) + sim ref,
