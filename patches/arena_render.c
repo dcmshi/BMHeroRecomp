@@ -62,7 +62,11 @@ extern void func_8001ABF4(s32 arg0, s32 arg1, s32 arg2, struct UnkStruct8016C298
  * Nitros boss holds model/anim-pool slots that actionState=NONE doesn't free,
  * leaving little headroom. Raising the sim cap (A1.3) needs that freed first
  * (integration notes §8). */
-#define BOMB_POOL 6
+/* A1.4: was 6, but the un-pile gives each bomb a DISTINCT model-pool slot (they
+ * used to all collapse into one, masking the ceiling). 3 puppets + 4 = 7 actors,
+ * under the ~8 ceiling; covers the 4-bomb spread. A 5th/6th live bomb won't render
+ * until the boss's held slots are freed. */
+#define BOMB_POOL 4
 /* A1.2d real bomber. The bomber is ONE object, ONE part; the mesh is loaded by
  * the spawner from an ObjSpawnInfo, and the anim instance is bound with
  * func_8001C0EC (-> func_8001BE6C) + func_8001ABF4 — but the descriptor and
@@ -297,30 +301,24 @@ void arena_render_routine(void) {
                 }
             }
 
-            /* A1.2c slice 2 fallback: 4 blast actors (bomb mesh, scaled by the
-             * sim's blast radius each frame), start hidden. */
-            {
-                s32 bj;
-                for (bj = 0; bj < 4; bj++) {
-                    struct ObjSpawnInfo linfo;
-                    linfo.unk0 = 0; linfo.unk2 = OBJ_TOBIRA1_O; linfo.unk4 = 9;
-                    linfo.unk6 = 0; linfo.unk7 = 0; linfo.unk8 = 0; linfo.unk9 = 0; linfo.unkA = 0;
-                    {
-                        s32 slot = func_80027464(1, &linfo,
-                                                 gPlayerObject->Pos.x,
-                                                 gPlayerObject->Pos.y,
-                                                 gPlayerObject->Pos.z, 0.0f);
-                        if (slot >= 0) {
-                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);
-                            gObjects[slot].actionState = ACTION_NONE;   /* start hidden */
-                        }
-                        arena_export_blastactor_set_slot(bj, slot);
-                    }
-                }
-            }
+            /* A1.4: the A1.2c "fallback blast" actors are DROPPED. They were the
+             * root of the invisible-set-bomb bug: each was spawned then set
+             * ACTION_NONE, which let func_80027464 REUSE the just-freed slot for
+             * the next actor, so every blast+bomb actor collapsed into ONE
+             * gObjects slot (evidence: [setdbg] slot=17 for all). The blast render
+             * loop then set that shared slot ACTION_NONE whenever no blast was live
+             * -> the bomb the bomb-loop had just shown was immediately hidden.
+             * Removing the blast actors frees model-pool budget (§8 ceiling) AND
+             * stops the hiding. Explosion visual deferred (revisit by reusing a
+             * bomb's own actor as its blast on detonation, to stay under the pool
+             * ceiling). arena_blastactor slots stay -1, so the blast render loop
+             * below no-ops. */
 
-            /* A1.2c: spawn a pool of 16 bomb actors (same recipe), start hidden;
-             * the per-frame loop below shows/positions the live ones. */
+            /* A1.4: spawn the bomb-actor pool with DISTINCT slots. Do NOT set
+             * ACTION_NONE at spawn (that caused the pile-up above); the per-frame
+             * loop below hides the inactive ones the same frame (no flicker). Pool
+             * kept small (BOMB_POOL) to stay under the model-pool ceiling now that
+             * the actors take distinct slots. */
             {
                 s32 bi;
                 for (bi = 0; bi < BOMB_POOL; bi++) {
@@ -332,10 +330,8 @@ void arena_render_routine(void) {
                                                  gPlayerObject->Pos.x,
                                                  gPlayerObject->Pos.y,
                                                  gPlayerObject->Pos.z, 0.0f);
-                        if (slot >= 0) {
-                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);
-                            gObjects[slot].actionState = ACTION_NONE;   /* start hidden */
-                        }
+                        if (slot >= 0)
+                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* anim bind; left ACTION_IDLE */
                         arena_export_bomb_set_slot(bi, slot);
                     }
                 }
