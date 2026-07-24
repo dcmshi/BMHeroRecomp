@@ -619,7 +619,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4');   /* 3 = facing probe, 4 = anim probe */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5');   /* 3=facing 4=anim 5=arena-measure */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -660,12 +660,24 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 static uint32_t ap = 0;
                 ap++;
                 if (ap > 30 && ap < 520) *y = -1.0f;            /* keep moving (locomotion anims live) */
-                if ((ap >= 240 && ap < 248) ||
-                    (ap >= 300 && ap < 308) ||
-                    (ap >= 360 && ap < 368)) {
-                    *y = 0.0f;                                   /* stand to set cleanly */
-                    *buttons |= 0x2000;                          /* CONT_G = Z = set */
+                if ((ap >= 240 && ap < 248) || (ap >= 300 && ap < 308)) {
+                    *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
+                if (ap >= 360 && ap < 368) {
+                    *y = 0.0f;                                   /* set while STANDING (control) */
+                    *buttons |= 0x2000;
+                }
+            }
+            if (mode && mode[0] == '5') {
+                /* TEMP arena-measurement sweep: drive all four stick directions
+                 * (sim arena temporarily enlarged) so the player runs to the real
+                 * Nitros room walls; the patch's [ppos] log shows where it stops. */
+                static uint32_t ms = 0;
+                ms++;
+                if      (ms < 150) *y = -1.0f;
+                else if (ms < 320) *x =  1.0f;
+                else if (ms < 490) *y =  1.0f;
+                else               *x = -1.0f;
             }
         }
     }
@@ -681,7 +693,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;

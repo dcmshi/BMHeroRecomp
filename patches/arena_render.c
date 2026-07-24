@@ -152,8 +152,24 @@ void arena_render_routine(void) {
         s32 set  = (gActiveContButton & CONT_G) ? 1 : 0;   /* Z trigger / Q key */
         s32 buttons = jump | (bomb << 1) | (set << 2);
         arena_export_tick_input(sx, sy, buttons);
-        gPlayerObject->Pos.x += arena_export_player_x(0);   /* getter returns dx */
-        gPlayerObject->Pos.z += arena_export_player_z(0);   /* getter returns dz */
+        /* A1.4 co-drive FIX (2026-07-24): capture the world origin + sim ref ONCE,
+         * early (after the ~30-frame draw-gate warmup — level stable, minimal
+         * drift, vs the old 90-frame spawn-gate capture that drifted ~1400u), then
+         * drive player 0 by the sim's ABSOLUTE mapped position (like the 3 puppets)
+         * — NOT by adding a per-frame delta on top of the game walker's own
+         * movement. The old delta model double-drove the player (game + sim) and
+         * let the sim jam against its arena walls (dx->0) while the game coasted ->
+         * mid-floor slowdowns (per-frame [mv] trace). Absolute drive makes the sim
+         * the sole owner of X/Z; Y stays game-driven (grounding); camera follows. */
+        if (!arena_export_puppet_ready() && arena_export_draw_gate()) {
+            union { f32 f; u32 u; } cx, cy, cz;
+            cx.f = gPlayerObject->Pos.x; cy.f = gPlayerObject->Pos.y; cz.f = gPlayerObject->Pos.z;
+            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u);
+        }
+        if (arena_export_puppet_ready()) {
+            gPlayerObject->Pos.x = arena_export_puppet_wx(0);   /* absolute sim pos (no co-drive) */
+            gPlayerObject->Pos.z = arena_export_puppet_wz(0);
+        }
         /* A1.2e: Rot.y = 180 - sim_yaw, DERIVED (not guessed) from the game's
          * own movement math: game moves along (+sin th, +cos th) (2BF00.c:480),
          * the sim along (+sin yaw, -cos yaw) (arena_sim.c kick math): th=180-yaw
@@ -197,13 +213,11 @@ void arena_render_routine(void) {
          * where the anim-instance path (func_8001C0EC -> func_800122F0) hangs
          * in malloc_game (symbolized stack, 2026-07-22). Spawn only once the
          * level loop is actually pumping. */
-        if (!arena_export_puppet_ready() && arena_export_spawn_gate()) {
-            union { f32 f; u32 u; } cx, cy, cz;
-            cx.f = gPlayerObject->Pos.x;
-            cy.f = gPlayerObject->Pos.y;
-            cz.f = gPlayerObject->Pos.z;
-            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u);
-
+        if (arena_export_spawn_gate() && arena_export_puppet_get_slot(1) < 0) {
+            /* origin/ref are captured early (above); this block only SPAWNS the
+             * actors, still gated ~90 frames (heap not serviceable earlier, §8.5b).
+             * Spawn-once latch is now "player-1 slot not yet assigned" (puppet_ready
+             * no longer gates the spawn — it means "origin captured" now). */
             s32 i;
             for (i = 1; i < 4; i++) {   /* players 1-3 */
                 struct ObjSpawnInfo info;

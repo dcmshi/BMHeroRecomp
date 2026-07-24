@@ -136,6 +136,12 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
             int o = g_state.bombs[b].owner;
             if (o >= 0 && o < ARENA_MAX_PLAYERS) g_set_edge[o] = 1;
+            if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
+                std::fprintf(g_log, "[setdbg] t%u bi=%d live=%d simY=%.3f wy=%.2f originY=%.2f slot=%d\n",
+                    g_state.tick, b, g_state.players[0].live_bombs,
+                    qf(g_state.bombs[b].pos.y), arena_bomb_wy(b), g_origin_y, g_bomb_slot[b]);
+                std::fflush(g_log);
+            }
         }
         g_bomb_prev_state[b] = now;
     }
