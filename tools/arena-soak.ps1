@@ -5,14 +5,30 @@
 # process alive). Exit code = number of failures.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\arena-soak.ps1 -N 10
-param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe)
+param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
+      [string]$Expect = "", [string]$Rising = "", [int]$Mode = 0)
 # -Probe: single run in ARENA_AUTO_BATTLE=3 (in-level stick-up + hold-L
 # injection for the camera forensics); dwells after PASS so the injected
 # samples land in the log before the kill.
 # -AnimProbe: single run in ARENA_AUTO_BATTLE=4 (A1.4) — runs + presses Z (set)
 # in-level; asserts the render patch logged [anim] idx=29 (the set-bomb pose)
 # with the frame counter advancing. This is the A1.4 objective gate.
-if ($Probe -or $AnimProbe) { $N = 1 }
+#
+# GENERIC GATES (so a new objective probe needs only its ARENA_AUTO_BATTLE mode
+# in main.cpp, not an edit to this harness as well):
+# -Expect '<regex>' : fail unless the pattern appears in arena_bridge.log.
+# -Rising '<regex>' : pattern must match >=2 times with its first capture group
+#                     strictly increasing — the "it actually PLAYED, not just got
+#                     set for one frame" check.
+# -Mode <n>         : ARENA_AUTO_BATTLE value (default 1; 3 for -Probe, 4 for
+#                     -AnimProbe).
+#
+# -AnimProbe is now sugar over these: -Mode 4 -Rising 'idx=29 frame=(\d+)'.
+if ($AnimProbe -and -not $Rising) { $Rising = 'idx=29 frame=(\d+)' }
+if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
+if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
+if ($Mode -eq 0) { $Mode = 1 }
+if ($Probe -or $AnimProbe -or $Expect -or $Rising) { $N = 1 }
 
 $root  = Split-Path $PSScriptRoot -Parent
 $exe   = Join-Path $root "build-rwdi\BMHeroRecompiled.exe"
@@ -29,9 +45,7 @@ for ($i = 1; $i -le $N; $i++) {
     Remove-Item $log -Force -ErrorAction SilentlyContinue
     $dumpCount = (Get-ChildItem $dumps -Filter *.dmp -ErrorAction SilentlyContinue | Measure-Object).Count
 
-    if ($AnimProbe)  { $env:ARENA_AUTO_BATTLE = "4" }
-    elseif ($Probe)  { $env:ARENA_AUTO_BATTLE = "3" }
-    else             { $env:ARENA_AUTO_BATTLE = "1" }
+    $env:ARENA_AUTO_BATTLE = "$Mode"
     $p = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
     $verdict = "HANG"; $detail = ""
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -51,7 +65,9 @@ for ($i = 1; $i -le $N; $i++) {
         }
     }
     $secs = [int]$sw.Elapsed.TotalSeconds
-    if (($Probe -or $AnimProbe) -and $verdict -eq "PASS") { Start-Sleep -Seconds 10 }   # let the injection sample
+    if (($Probe -or $AnimProbe -or $Expect -or $Rising) -and $verdict -eq "PASS") {
+        Start-Sleep -Seconds 10   # let the injected input sample land in the log
+    }
     Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
     $results += [pscustomobject]@{ Iter = $i; Verdict = $verdict; Seconds = $secs; Detail = $detail }
     Write-Host ("iter {0}: {1} ({2}s) {3}" -f $i, $verdict, $secs, $detail)
@@ -61,19 +77,27 @@ $results | Format-Table -AutoSize
 $fails = @($results | Where-Object Verdict -ne "PASS").Count
 Write-Host ("SUMMARY: {0}/{1} PASS" -f ($N - $fails), $N)
 
-if ($AnimProbe) {
-    # A1.4 objective gate: the render patch must have logged the set-bomb pose
-    # (anim idx 29) with the frame counter advancing (proves it PLAYED, not just
-    # got set for one frame). idx=29 can come from our sim-edge trigger or the
-    # game's own walker on the Z press; either proves the animation path works.
-    $frames = @()
-    if (Test-Path $log) {
-        $frames = @(Select-String -Path $log -Pattern 'idx=29 frame=(\d+)' |
-                    ForEach-Object { [int]$_.Matches[0].Groups[1].Value })
-    }
-    $animPass = ($frames.Count -ge 2) -and ($frames[-1] -gt $frames[0])
-    Write-Host ("ANIM PROBE: [anim] idx=29 samples={0} frames=[{1}] -> {2}" -f `
-        $frames.Count, ($frames -join ','), $(if ($animPass) { 'PASS' } else { 'FAIL' }))
-    if (-not $animPass) { $fails++ }
+if ($Expect) {
+    $hit = (Test-Path $log) -and (Select-String -Path $log -Pattern $Expect -Quiet)
+    Write-Host ("EXPECT GATE: /{0}/ -> {1}" -f $Expect, $(if ($hit) { 'PASS' } else { 'FAIL' }))
+    if (-not $hit) { $fails++ }
 }
+
+if ($Rising) {
+    # The pattern's first capture group must appear >=2 times and strictly
+    # increase — proves the thing kept advancing rather than firing once.
+    # (For -AnimProbe this is the A1.4 gate: idx=29 can come from our sim-edge
+    # trigger or the game's own walker on the Z press; either proves the
+    # animation path works.)
+    $vals = @()
+    if (Test-Path $log) {
+        $vals = @(Select-String -Path $log -Pattern $Rising |
+                  ForEach-Object { [int]$_.Matches[0].Groups[1].Value })
+    }
+    $ok = ($vals.Count -ge 2) -and ($vals[-1] -gt $vals[0])
+    Write-Host ("RISING GATE: /{0}/ samples={1} values=[{2}] -> {3}" -f `
+        $Rising, $vals.Count, ($vals -join ','), $(if ($ok) { 'PASS' } else { 'FAIL' }))
+    if (-not $ok) { $fails++ }
+}
+
 exit $fails
