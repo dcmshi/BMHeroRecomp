@@ -42,7 +42,11 @@ RECOMP_PATCH void load_from_rom_to_addr(void* start, void* addr, s32 size) {
     u8* start_loc;
     u8* addr_loc;
 
-    recomp_printf("[load_from_rom_to_addr] start 0x%08X addr 0x%08X size 0x%08X\n", (u32)start, (u32)addr, size);
+    /* recomp_printf here intermittently CRASHES during level load (symbolized
+     * dump 2026-07-22: _Printf's indirect call -> get_function "Failed to find
+     * function" -> exit -> terminate -> 0xC0000409). It fires for EVERY ROM
+     * section load and races the load thread; disabled. */
+    /* recomp_printf("[load_from_rom_to_addr] start 0x%08X addr 0x%08X size 0x%08X\n", (u32)start, (u32)addr, size); */
 
     osWritebackDCache(addr, size);
     osInvalICache(addr, size);
@@ -424,7 +428,18 @@ RECOMP_PATCH void func_8001D9E4(void* arg0) {
     gSPDisplayList(gMasterDisplayList++, D_1000C50);
     if (D_80165254 == 0) {
         if ((D_8016E0A8 != 0) && (gDebugRoutine1 != NULL)) {
-            gDebugRoutine1();
+            /* A1.2e (arena fork): this indirect call is a func_map lookup that
+             * RACES overlay load/unload during level transitions (8 symbolized
+             * dumps: get_function "Failed to find function" -> exit; same
+             * mechanism as the disabled load-window recomp_printf sites).
+             * Direct-dispatch the hook the arena level-enter patch assigns
+             * (arena_render.c func_800824A8) — same-file symbol, host-linked,
+             * no lookup. Any other value keeps stock behavior. */
+            if (gDebugRoutine1 == &func_800821E0) {
+                func_800821E0();
+            } else {
+                gDebugRoutine1();
+            }
         }
     } else if (D_80165254 == 2) {
         D_80165254 = 0;

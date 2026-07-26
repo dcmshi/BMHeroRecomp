@@ -84,3 +84,7 @@ aspMain.cpp
 
 # Arena bridge runtime proof log
 arena_bridge.log
+
+# A1.2b: local cmake build tree + runtime logs
+build-cmake/
+arena_bridge.log

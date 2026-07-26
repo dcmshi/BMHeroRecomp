@@ -50,6 +50,44 @@ extern "C" void arena_export_player_x(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_player_yaw(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_dbg_dump(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spawn_clone_once(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomber_off_x(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomber_off_z(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomber_yaw(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spawn_placeholders_once(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spawn_gate(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_draw_gate(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_draw_gate_reset(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_set_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_get_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wx(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wy(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_wz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_puppet_yaw(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_dbg_u32(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_active(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_wx(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_wy(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_wz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_set_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_bomb_get_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_is_actor_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spike_once(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_spike_next(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_sweep_active(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_active(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wr(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blastactor_set_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blastactor_get_slot(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
+extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
+extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -572,6 +610,100 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
     recompui::renderer::trigger_texture_pack_update();
 }
 
+/* A1.2f soak: synthetic frontend mash. While ARENA_AUTO_BATTLE is set and the
+ * arena spawn block hasn't run yet (arena_puppet_ready()==0), OR START/A
+ * presses (4 polls on / 4 off, alternating buttons) into controller 0 —
+ * injected at the input-callback level, below SDL, so no window focus is
+ * needed. Self-stops once in-arena; harmless jitter before that. */
+static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+    bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
+    static const bool soak_active = []() {
+        const char* v = std::getenv("ARENA_AUTO_BATTLE");
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5');   /* 3=facing 4=anim 5=arena-measure */
+    }();
+    if (soak_active && ok && controller_num == 0) {
+        if (!arena_routine_seen()) {
+            static uint32_t polls = 0;
+            polls++;
+            if ((polls >> 2) & 1) {                        /* 4 polls on / 4 off */
+                *buttons |= ((polls >> 3) & 1) ? 0x1000    /* START */
+                                               : 0x8000;   /* A */
+            }
+        } else {
+            /* Probe mode (ARENA_AUTO_BATTLE=3), phased: run TOWARD the camera
+             * (facing visible on screenshots), then press Z (set-bomb check —
+             * read [bombs] live count from the log). */
+            static const char* mode = std::getenv("ARENA_AUTO_BATTLE");
+            if (mode && mode[0] == '3') {
+                static uint32_t post = 0;
+                post++;
+                if (post > 30 && post < 400) {
+                    /* A1.3 facing drift probe: hold a FIXED world stick
+                     * direction (down = toward camera) + L so the facing
+                     * forensics log; the player runs across the arena and the
+                     * rail camera swings on its own — the log then shows
+                     * whether applied Rot.y stays world-constant (correct;
+                     * apparent drift is just the camera orbit) or tracks the
+                     * camera yaw (real coupling to fix). */
+                    *y = -1.0f;                 /* fixed stick: toward camera */
+                    *buttons |= 0x0020;         /* CONT_L: enable facing forensics */
+                }
+            }
+            if (mode && mode[0] == '4') {
+                /* A1.4 anim probe: run so locomotion anims are live, then press
+                 * Z (set) to fire the set-bomb pose (idx 29). The render patch
+                 * burst-logs [anim] idx/frame; arena-soak.ps1 -AnimProbe asserts
+                 * idx=29 with the frame counter advancing. Z MUST land after the
+                 * sim's 180-tick countdown (set only works in PHASE_PLAY) — so
+                 * pulse it well past that, several times (each rising edge = one
+                 * set), standing still per pulse for a clean set. */
+                static uint32_t ap = 0;
+                ap++;
+                if (ap > 30 && ap < 520) *y = -1.0f;            /* keep moving (locomotion anims live) */
+                if ((ap >= 240 && ap < 248) || (ap >= 300 && ap < 308)) {
+                    *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
+                }
+                if (ap >= 360 && ap < 368) {
+                    *y = 0.0f;                                   /* set while STANDING (control) */
+                    *buttons |= 0x2000;
+                }
+            }
+            if (mode && mode[0] == '5') {
+                /* TEMP arena-measurement sweep: drive all four stick directions
+                 * (sim arena temporarily enlarged) so the player runs to the real
+                 * Nitros room walls; the patch's [ppos] log shows where it stops. */
+                static uint32_t ms = 0;
+                ms++;
+                if      (ms < 150) *y = -1.0f;
+                else if (ms < 320) *x =  1.0f;
+                else if (ms < 490) *y =  1.0f;
+                else               *x = -1.0f;
+            }
+        }
+    }
+    return ok;
+}
+
+/* A1.2f soak: deferred auto-battle. ARENA_AUTO_BATTLE ("1" = with frontend
+ * mash, "2" = auto-battle only) fires the Battle menu option's exact body on
+ * the ~60th launcher update frame — mimicking a human clicking after the UI
+ * settles. Firing at launcher INIT instead dies ~11s in (dumpless exit). */
+static void soak_launcher_update(recompui::LauncherMenu *menu) {
+    banjo::launcher_animation_update(menu);
+    static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
+    static int frames = 0;
+    static bool fired = false;
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5') && !fired && ++frames >= 60) {
+        std::u8string gid = supported_games[0].game_id;
+        if (recomp::is_rom_valid(gid)) {
+            fired = true;
+            arena_bridge_set_battle_mode(1);
+            recomp::start_game(gid, {});
+            recompui::hide_all_contexts();
+        }
+    }
+}
+
 void on_launcher_init(recompui::LauncherMenu *menu) {
     auto game_options_menu = menu->init_game_options_menu(
         supported_games[0].game_id,
@@ -597,6 +729,10 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     });
 
     game_options_menu->set_width(30, recompui::Unit::Percent);
+
+    /* A1.2f soak: auto-battle fires from soak_launcher_update (deferred to the
+     * ~60th launcher frame) — starting the game inside THIS init callback dies
+     * ~11s in with a dumpless exit (init race, measured 3/3). */
 
     for (auto option : game_options_menu->get_options()) {
         option->set_justify_content(recompui::JustifyContent::FlexEnd);
@@ -755,6 +891,44 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_player_y);
     REGISTER_FUNC(arena_export_player_z);
     REGISTER_FUNC(arena_export_player_yaw);
+    REGISTER_FUNC(arena_export_dbg_dump);
+    REGISTER_FUNC(arena_export_spawn_clone_once);
+    REGISTER_FUNC(arena_export_bomber_off_x);
+    REGISTER_FUNC(arena_export_bomber_off_z);
+    REGISTER_FUNC(arena_export_bomber_yaw);
+    REGISTER_FUNC(arena_export_spawn_placeholders_once);
+    REGISTER_FUNC(arena_export_puppet_capture);
+    REGISTER_FUNC(arena_export_puppet_ready);
+    REGISTER_FUNC(arena_export_spawn_gate);
+    REGISTER_FUNC(arena_export_draw_gate);
+    REGISTER_FUNC(arena_export_draw_gate_reset);
+    REGISTER_FUNC(arena_export_puppet_set_slot);
+    REGISTER_FUNC(arena_export_puppet_get_slot);
+    REGISTER_FUNC(arena_export_puppet_wx);
+    REGISTER_FUNC(arena_export_puppet_wy);
+    REGISTER_FUNC(arena_export_puppet_wz);
+    REGISTER_FUNC(arena_export_puppet_yaw);
+    REGISTER_FUNC(arena_export_dbg_u32);
+    REGISTER_FUNC(arena_export_bomb_active);
+    REGISTER_FUNC(arena_export_bomb_wx);
+    REGISTER_FUNC(arena_export_bomb_wy);
+    REGISTER_FUNC(arena_export_bomb_wz);
+    REGISTER_FUNC(arena_export_bomb_set_slot);
+    REGISTER_FUNC(arena_export_bomb_get_slot);
+    REGISTER_FUNC(arena_export_is_actor_slot);
+    REGISTER_FUNC(arena_export_spike_once);
+    REGISTER_FUNC(arena_export_spike_next);
+    REGISTER_FUNC(arena_export_sweep_active);
+    REGISTER_FUNC(arena_export_blast_active);
+    REGISTER_FUNC(arena_export_blast_wr);
+    REGISTER_FUNC(arena_export_blastactor_set_slot);
+    REGISTER_FUNC(arena_export_blastactor_get_slot);
+    REGISTER_FUNC(arena_export_blast_new);
+    REGISTER_FUNC(arena_export_blast_wx);
+    REGISTER_FUNC(arena_export_blast_wy);
+    REGISTER_FUNC(arena_export_blast_wz);
+    REGISTER_FUNC(arena_export_set_new);
+    REGISTER_FUNC(arena_export_dbg_anim);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();
@@ -770,7 +944,7 @@ int main(int argc, char** argv) {
     banjo::init_config();
 
     recompui::register_launcher_init_callback(on_launcher_init);
-    recompui::register_launcher_update_callback(banjo::launcher_animation_update);
+    recompui::register_launcher_update_callback(soak_launcher_update);   /* A1.2f: wraps banjo update */
 
     recomp::rsp::callbacks_t rsp_callbacks{
         .get_rsp_microcode = get_rsp_microcode,
@@ -797,7 +971,7 @@ int main(int argc, char** argv) {
 
     ultramodern::input::callbacks_t input_callbacks{
         .poll_input = recompinput::poll_inputs,
-        .get_input = recompinput::profiles::get_n64_input,
+        .get_input = soak_get_n64_input,   /* A1.2f: wraps get_n64_input (see above) */
         .set_rumble = recompinput::set_rumble,
         .get_connected_device_info = get_connected_device_info,
     };

@@ -8,7 +8,16 @@
 // Native bridge import (registered in main.cpp). Returns 1 in battle mode.
 DECLARE_FUNC(s32, arena_bridge_is_battle);
 
-#define ARENA_WARP_MAP 2   /* MAP_BATTLE_ROOM; change to fall back (Task 3) */
+extern void (*gDebugRoutine1)(void);   /* draw dispatcher hook (17930.c:1561) */
+extern void (*gDebugRoutine2)(void);   /* update dispatcher hook (17930.c:1796) */
+
+#define ARENA_WARP_MAP 15  /* MAP_NITROS_1 boss arena (flat/open).
+                            * History: 2 MAP_BATTLE_ROOM (pits aborted actor
+                            * collision); 71 MAP_MIRROR_ROOM tried for A1.2d
+                            * (bomber anim data) — registry empty there too AND
+                            * direct-warp hits an unregistered function pointer
+                            * in func_8001D9E4 at level-enter (get_function ->
+                            * exit; dump 2026-07-22). Avoid 71. */
 
 // A1.1b-ii: func_80081C50 seeds the next-level var (D_8016E432) and the spawn
 // coords from gCurrentLevel, just before the loader (func_80081D78) reads
@@ -18,7 +27,28 @@ DECLARE_FUNC(s32, arena_bridge_is_battle);
 RECOMP_PATCH void func_80081C50(void) {
     if (arena_bridge_is_battle()) {
         gCurrentLevel = ARENA_WARP_MAP;
-        recomp_printf("[arena_warp] -> map %d\n", gCurrentLevel);
+        /* Stale-routine land mine (2 symbolized dumps, 2026-07-22): during the
+         * load window the frame pump can fire gDebugRoutine1() while it still
+         * points at the PREVIOUS screen's routine — if that overlay was
+         * unloaded, the recomp aborts (get_function -> exit; dumps name
+         * func_8001D9E4, the draw dispatcher). Both dispatchers NULL-check
+         * (17930.c:1561/1796), so park them here at load prep; the level-enter
+         * patch (func_800824A8) reassigns them. Battle-scoped — campaign keeps
+         * upstream behavior. */
+        gDebugRoutine1 = NULL;
+        gDebugRoutine2 = NULL;
+        /* NOTE (2026-07-21): tried neutering gLevelInfo[level]->unk24/unk28
+         * (the loader's spawn hooks) to kill the boss before init — but those
+         * hooks also do draw/level setup: the arena then white-screens
+         * deterministically. Reverted. The per-frame sweep handles the boss
+         * once in-level. */
+        /* recomp_printf here was the THIRD confirmed site of the load-window
+         * print crash (_Printf -> get_function -> exit; symbolized dump
+         * 2026-07-22) — the very "stochastic load crash" the note above called
+         * an open item. This function IS the level-load prep; never print here.
+         * (Sites 1+2: required_patches.c load_from_rom_to_addr,
+         * 3d_object_hook.c func_800608B8.) */
+        /* recomp_printf("[arena_warp] -> map %d\n", gCurrentLevel); */
     }
     D_8016E430 = 0;
     D_8016E432 = (s16) gCurrentLevel;

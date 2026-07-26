@@ -1,0 +1,103 @@
+# A1.2f boot-soak smoke harness. Launches the RWDI exe N times with
+# ARENA_AUTO_BATTLE=1 (auto-Battle + synthetic frontend mash — see main.cpp),
+# waits for the in-arena [capture] marker in arena_bridge.log, and classifies
+# each boot PASS / CRASH (process died; names the new dump) / HANG (timeout,
+# process alive). Exit code = number of failures.
+#
+#   powershell -ExecutionPolicy Bypass -File tools\arena-soak.ps1 -N 10
+param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
+      [string]$Expect = "", [string]$Rising = "", [int]$Mode = 0)
+# -Probe: single run in ARENA_AUTO_BATTLE=3 (in-level stick-up + hold-L
+# injection for the camera forensics); dwells after PASS so the injected
+# samples land in the log before the kill.
+# -AnimProbe: single run in ARENA_AUTO_BATTLE=4 (A1.4) — runs + presses Z (set)
+# in-level; asserts the render patch logged [anim] idx=29 (the set-bomb pose)
+# with the frame counter advancing. This is the A1.4 objective gate.
+#
+# GENERIC GATES (so a new objective probe needs only its ARENA_AUTO_BATTLE mode
+# in main.cpp, not an edit to this harness as well):
+# -Expect '<regex>' : fail unless the pattern appears in arena_bridge.log.
+# -Rising '<regex>' : pattern must match >=2 times with its first capture group
+#                     strictly increasing — the "it actually PLAYED, not just got
+#                     set for one frame" check.
+# -Mode <n>         : ARENA_AUTO_BATTLE value (default 1; 3 for -Probe, 4 for
+#                     -AnimProbe).
+#
+# -AnimProbe is now sugar over these: -Mode 4 -Rising 'idx=29 frame=(\d+)'.
+if ($AnimProbe -and -not $Rising) { $Rising = 'idx=29 frame=(\d+)' }
+if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
+if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
+if ($Mode -eq 0) { $Mode = 1 }
+if ($Probe -or $AnimProbe -or $Expect -or $Rising) { $N = 1 }
+
+$root  = Split-Path $PSScriptRoot -Parent
+$exe   = Join-Path $root "build-rwdi\BMHeroRecompiled.exe"
+$log   = Join-Path $root "arena_bridge.log"
+$dumps = "$env:LOCALAPPDATA\CrashDumps"
+if (-not (Test-Path $exe)) { Write-Error "missing $exe (build build-rwdi first)"; exit 99 }
+
+$results = @()
+for ($i = 1; $i -le $N; $i++) {
+    Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Milliseconds 800
+    # The game truncates/rewrites arena_bridge.log per process — delete it so any
+    # [capture] found belongs to THIS iteration (length-delta checks are unsound).
+    Remove-Item $log -Force -ErrorAction SilentlyContinue
+    $dumpCount = (Get-ChildItem $dumps -Filter *.dmp -ErrorAction SilentlyContinue | Measure-Object).Count
+
+    $env:ARENA_AUTO_BATTLE = "$Mode"
+    $p = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
+    $verdict = "HANG"; $detail = ""
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
+        Start-Sleep -Seconds 2
+        if ((Test-Path $log) -and (Select-String -Path $log -Pattern '\[capture\]' -Quiet)) {
+            $verdict = "PASS"; break
+        }
+        if ($p.HasExited) {
+            $verdict = "CRASH"
+            Start-Sleep -Seconds 3   # give WER time to write the dump
+            $newCount = (Get-ChildItem $dumps -Filter *.dmp -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($newCount -gt $dumpCount) {
+                $detail = (Get-ChildItem $dumps -Filter *.dmp | Sort-Object LastWriteTime -Descending | Select-Object -First 1).Name
+            }
+            break
+        }
+    }
+    $secs = [int]$sw.Elapsed.TotalSeconds
+    if (($Probe -or $AnimProbe -or $Expect -or $Rising) -and $verdict -eq "PASS") {
+        Start-Sleep -Seconds 10   # let the injected input sample land in the log
+    }
+    Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
+    $results += [pscustomobject]@{ Iter = $i; Verdict = $verdict; Seconds = $secs; Detail = $detail }
+    Write-Host ("iter {0}: {1} ({2}s) {3}" -f $i, $verdict, $secs, $detail)
+}
+Remove-Item Env:\ARENA_AUTO_BATTLE -ErrorAction SilentlyContinue
+$results | Format-Table -AutoSize
+$fails = @($results | Where-Object Verdict -ne "PASS").Count
+Write-Host ("SUMMARY: {0}/{1} PASS" -f ($N - $fails), $N)
+
+if ($Expect) {
+    $hit = (Test-Path $log) -and (Select-String -Path $log -Pattern $Expect -Quiet)
+    Write-Host ("EXPECT GATE: /{0}/ -> {1}" -f $Expect, $(if ($hit) { 'PASS' } else { 'FAIL' }))
+    if (-not $hit) { $fails++ }
+}
+
+if ($Rising) {
+    # The pattern's first capture group must appear >=2 times and strictly
+    # increase — proves the thing kept advancing rather than firing once.
+    # (For -AnimProbe this is the A1.4 gate: idx=29 can come from our sim-edge
+    # trigger or the game's own walker on the Z press; either proves the
+    # animation path works.)
+    $vals = @()
+    if (Test-Path $log) {
+        $vals = @(Select-String -Path $log -Pattern $Rising |
+                  ForEach-Object { [int]$_.Matches[0].Groups[1].Value })
+    }
+    $ok = ($vals.Count -ge 2) -and ($vals[-1] -gt $vals[0])
+    Write-Host ("RISING GATE: /{0}/ samples={1} values=[{2}] -> {3}" -f `
+        $Rising, $vals.Count, ($vals -join ','), $(if ($ok) { 'PASS' } else { 'FAIL' }))
+    if (-not $ok) { $fails++ }
+}
+
+exit $fails
