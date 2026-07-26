@@ -6,7 +6,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools\arena-soak.ps1 -N 10
 param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
-      [string]$Expect = "", [string]$Rising = "", [int]$Mode = 0)
+      [string]$Expect = "", [string]$Rising = "", [string]$Constant = "", [int]$Mode = 0)
 # -Probe: single run in ARENA_AUTO_BATTLE=3 (in-level stick-up + hold-L
 # injection for the camera forensics); dwells after PASS so the injected
 # samples land in the log before the kill.
@@ -20,6 +20,10 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 # -Rising '<regex>' : pattern must match >=2 times with its first capture group
 #                     strictly increasing — the "it actually PLAYED, not just got
 #                     set for one frame" check.
+# -Constant '<regex>': inverse of -Rising. Pattern must match >=2 times and its
+#                     first capture group must be IDENTICAL every time. For
+#                     values where CHANGE is the bug — the A1.5 fixed camera's
+#                     yaw being the motivating case.
 # -Mode <n>         : ARENA_AUTO_BATTLE value (default 1; 3 for -Probe, 4 for
 #                     -AnimProbe).
 #
@@ -28,7 +32,7 @@ if ($AnimProbe -and -not $Rising) { $Rising = 'idx=29 frame=(\d+)' }
 if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
 if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
 if ($Mode -eq 0) { $Mode = 1 }
-if ($Probe -or $AnimProbe -or $Expect -or $Rising) { $N = 1 }
+if ($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant) { $N = 1 }
 
 $root  = Split-Path $PSScriptRoot -Parent
 $exe   = Join-Path $root "build-rwdi\BMHeroRecompiled.exe"
@@ -65,7 +69,7 @@ for ($i = 1; $i -le $N; $i++) {
         }
     }
     $secs = [int]$sw.Elapsed.TotalSeconds
-    if (($Probe -or $AnimProbe -or $Expect -or $Rising) -and $verdict -eq "PASS") {
+    if (($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant) -and $verdict -eq "PASS") {
         Start-Sleep -Seconds 10   # let the injected input sample land in the log
     }
     Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -97,6 +101,22 @@ if ($Rising) {
     $ok = ($vals.Count -ge 2) -and ($vals[-1] -gt $vals[0])
     Write-Host ("RISING GATE: /{0}/ samples={1} values=[{2}] -> {3}" -f `
         $Rising, $vals.Count, ($vals -join ','), $(if ($ok) { 'PASS' } else { 'FAIL' }))
+    if (-not $ok) { $fails++ }
+}
+
+if ($Constant) {
+    # Inverse of -Rising: the captured value must NEVER change. For the A1.5
+    # fixed camera, drift IS the bug - so constancy is the assertion.
+    # A single sample is NOT "constant" (nothing was proven), hence >= 2.
+    $vals = @()
+    if (Test-Path $log) {
+        $vals = @(Select-String -Path $log -Pattern $Constant |
+                  ForEach-Object { $_.Matches[0].Groups[1].Value })
+    }
+    $uniq = @($vals | Select-Object -Unique)
+    $ok = ($vals.Count -ge 2) -and ($uniq.Count -eq 1)
+    Write-Host ("CONSTANT GATE: /{0}/ samples={1} distinct=[{2}] -> {3}" -f `
+        $Constant, $vals.Count, ($uniq -join ','), $(if ($ok) { 'PASS' } else { 'FAIL' }))
     if (-not $ok) { $fails++ }
 }
 
