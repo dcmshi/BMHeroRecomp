@@ -55,18 +55,41 @@ int main(void) {
           "noticeably slower than A/D again",
           (double)arena_cam_foreshorten(), ARENA_CAM_PITCH_DEG);
 
-    /* ---- ASSUMPTION 4: the eye pose is geometrically sane. ---- */
+    /* ---- ASSUMPTION 4: our effective-yaw trig matches the GAME'S +90 offset. --
+     * func_8001994C (decomp src/boot/17930.c:605) computes the eye from
+     * view_rot_y = gView.rot.y + 90. Our COS/SIN_YAW_EFF literals model that. If
+     * they drift from the game's formula, the camera ends up pointing somewhere
+     * we never intended - and because the game recomputes eye every frame, the
+     * mistake would look like "the override didn't take" rather than "the pose
+     * is wrong", which is a much harder bug to read. */
+    double reff = (ARENA_CAM_YAW_DEG + ARENA_CAM_YAW_OFFSET_DEG) * PI / 180.0;
+    CHECK(fabs(ARENA_CAM_COS_YAW_EFF - cos(reff)) < EPS,
+          "ARENA_CAM_COS_YAW_EFF %.7f != cos(yaw+%.0f) = %.7f",
+          ARENA_CAM_COS_YAW_EFF, ARENA_CAM_YAW_OFFSET_DEG, cos(reff));
+    CHECK(fabs(ARENA_CAM_SIN_YAW_EFF - sin(reff)) < EPS,
+          "ARENA_CAM_SIN_YAW_EFF %.7f != sin(yaw+%.0f) = %.7f",
+          ARENA_CAM_SIN_YAW_EFF, ARENA_CAM_YAW_OFFSET_DEG, sin(reff));
+
+    /* The game nudges rot.x of exactly 90 or 270 by 1 degree (gimbal guard).
+     * Sitting on one of those would silently shift our pitch. */
+    CHECK(ARENA_CAM_PITCH_DEG != 90.0f && ARENA_CAM_PITCH_DEG != 270.0f,
+          "pitch %.1f hits the game's gimbal guard (func_8001994C nudges 90/270 "
+          "by 1 degree), so the real pitch would differ from the declared one",
+          ARENA_CAM_PITCH_DEG);
+
+    /* ---- ASSUMPTION 5: the resulting eye pose is geometrically sane. ---- */
     float ox, oy, oz;
     arena_cam_eye_offset(&ox, &oy, &oz);
     CHECK(oy > 0.0f, "camera must sit ABOVE the arena (oy=%.1f)", (double)oy);
     CHECK(fabs(ox) < EPS,
-          "yaw 0 must give zero X offset (ox=%.4f) - otherwise the view is "
-          "rotated and stick-up stops mapping to a fixed world axis", (double)ox);
+          "yaw 0 (effective 90) must give zero X offset (ox=%.4f) - otherwise "
+          "the arena's long axis stops being horizontal on screen", (double)ox);
+    CHECK(oz > 0.0f,
+          "with the game's +90 offset, yaw 0 must put the eye at +Z (oz=%.1f)",
+          (double)oz);
     double len = sqrt((double)ox*ox + (double)oy*oy + (double)oz*oz);
     CHECK(fabs(len - ARENA_CAM_DIST) < 1e-2,
           "eye offset length %.3f != ARENA_CAM_DIST %.3f", len, (double)ARENA_CAM_DIST);
-    CHECK(ARENA_CAM_Z_SIGN == 1.0f || ARENA_CAM_Z_SIGN == -1.0f,
-          "ARENA_CAM_Z_SIGN must be exactly +1 or -1 (got %.3f)", (double)ARENA_CAM_Z_SIGN);
     CHECK(ARENA_CAM_DIST > 0.0f, "ARENA_CAM_DIST must be positive");
 
     if (!failures) { printf("ALL CAMERA POSE TESTS PASSED\n"); return 0; }

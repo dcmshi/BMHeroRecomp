@@ -34,15 +34,45 @@
 #define ARENA_CAM_DIST      1600.0f
 #define ARENA_CAM_AT_Y_LIFT   60.0f   /* aim slightly above the floor, not at it */
 
-/* Which side of the arena the eye sits on. Resolved by the probe: guessing wrong
- * yields a MIRRORED view rather than an obvious failure. */
-#define ARENA_CAM_Z_SIGN    (-1.0f)
+/* ---------------------------------------------------------------------------
+ * THE GAME DERIVES eye AND up ITSELF - we must NOT write them.
+ *
+ * func_8001994C (decomp src/boot/17930.c:605, recovered via tools/decomp-func.ps1)
+ * recomputes them every frame from at + rot + dist, gated on D_8016E134 == 0:
+ *
+ *     view_rot_y = gView.rot.y + 90.0f;          <-- NOTE THE +90 OFFSET
+ *     eye.x = dist * cos(view_rot_y) * cos(rot.x) + at.x;
+ *     eye.y = dist * sin(rot.x)                  + at.y;
+ *     eye.z = dist * sin(view_rot_y) * cos(rot.x) + at.z;
+ *     up.y  = (rot.x >= 90 && rot.x < 270) ? -1 : +1;
+ *
+ * So the patch writes ONLY at / rot.x / rot.y / dist and lets the game finish
+ * the job - self-consistent with its own conventions, and nothing to fight.
+ *
+ * Consequences of the +90 offset, at our yaw of 0:
+ *   effective yaw = 90  =>  cos = 0, sin = 1
+ *   => eye.x = at.x            (no lateral offset)
+ *   => eye.z = at.z + dist*cos(pitch)   (camera sits at +Z, looking back at -Z)
+ * which puts the arena's LONG axis (X) horizontal on screen, as intended.
+ * There is no Z_SIGN constant to guess - the game's formula settles it.
+ *
+ * The game also guards the gimbal (rot.x of exactly 90 or 270 is nudged by 1),
+ * so our 60 is safely away from that.
+ * ------------------------------------------------------------------------- */
 
-/* Eye position relative to `at`, for the fixed pose. */
+/* The game's +90 yaw offset, and the trig of the EFFECTIVE yaw (yaw + 90).
+ * At yaw 0: effective 90 -> cos 0, sin 1. Guarded by the host test. */
+#define ARENA_CAM_YAW_OFFSET_DEG   90.0f
+#define ARENA_CAM_COS_YAW_EFF       0.0f   /* cos(0 + 90) */
+#define ARENA_CAM_SIN_YAW_EFF       1.0f   /* sin(0 + 90) */
+
+/* A MODEL of where the game will place the eye given what we write. The patch
+ * does not use this - the game computes the real thing. The host test uses it to
+ * check our framing reasoning against the game's actual formula. */
 static inline void arena_cam_eye_offset(float* ox, float* oy, float* oz) {
-    *ox = ARENA_CAM_DIST * ARENA_CAM_COS_PITCH * ARENA_CAM_SIN_YAW;
+    *ox = ARENA_CAM_DIST * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
     *oy = ARENA_CAM_DIST * ARENA_CAM_SIN_PITCH;
-    *oz = ARENA_CAM_DIST * ARENA_CAM_COS_PITCH * ARENA_CAM_COS_YAW * ARENA_CAM_Z_SIGN;
+    *oz = ARENA_CAM_DIST * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
 }
 
 /* Screen travel for toward/away motion relative to across motion.
