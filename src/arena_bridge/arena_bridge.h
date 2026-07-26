@@ -56,6 +56,16 @@ int   arena_blastactor_get_slot(int i);
 /* A1.4 set-bomb animation (patch-callable). */
 int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
 void  arena_dbg_anim(int idx, int frame);   /* burst-log live player anim idx+frame */
+/* A1.5 camera probe. tag: 0=at 1=eye 2=rot 3=up 4=misc(x=gCameraType as a plain
+ * int, y=dist bits). Other tags carry three float BIT PATTERNS - the export ABI
+ * takes no float arguments. Probe-mode gating and throttling are native-side, so
+ * the patch can call this unconditionally and stay stateless. */
+void  arena_dbg_cam(int tag, int xbits, int ybits, int zbits);
+/* A1.5: arena centre in Hero world coords (same frozen-origin mapping as the
+ * puppets), for gView.at. */
+float arena_cam_at_x(void);
+float arena_cam_at_y(void);
+float arena_cam_at_z(void);
 #ifdef __cplusplus
 }
 #endif

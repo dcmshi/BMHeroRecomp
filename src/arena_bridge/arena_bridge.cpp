@@ -2,6 +2,10 @@
 
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>   /* getenv/atoi - A1.5 camera probe gate */
+#include <cstring>   /* memcpy - float bit patterns across the export ABI */
+
+#include "../../patches/arena_cam.h"   /* A1.5 pose constants (ARENA_CAM_AT_Y_LIFT) */
 
 extern "C" {
 #include "arena/arena_sim.h"
@@ -408,4 +412,48 @@ extern "C" void arena_dbg_anim(int idx, int frame) {
         std::fflush(stdout);
         if (g_log) { std::fprintf(g_log, "[anim] idx=%d frame=%d\n", idx, frame); std::fflush(g_log); }
     }
+}
+
+/* A1.5: arena centre in Hero world coords, for gView.at.
+ *
+ * Deliberately reuses the SAME frozen-origin mapping as the puppets: if the
+ * origin capture is ever wrong, the camera is wrong in the same direction as the
+ * actors, which keeps the picture self-consistent and makes the error obvious
+ * instead of confusing. Sim (0,0) is the arena centre. */
+extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * g_scale;   }
+extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z; }
+extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT; }
+
+/* A1.5 camera probe. The patch calls this every frame for 5 tags; the GATE and
+ * THROTTLE live here, not in the patch, because patches must stay stateless (a
+ * patch-local counter aborts 0xC0000409). Same division of labour as
+ * arena_dbg_anim's burst log above.
+ *
+ * Floats arrive as BIT PATTERNS - the export ABI takes no float arguments. */
+extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
+    static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
+    static const bool  armed = (mode != nullptr && std::atoi(mode) == 6);
+    if (!armed) return;
+    if (tag < 0 || tag > 4) return;
+
+    static int frames = 0;
+    if (tag == 0) frames++;              /* tag 0 arrives once per frame */
+    if ((frames % 30) != 0) return;      /* one sample per ~half second */
+
+    float x, y, z;
+    std::memcpy(&x, &xbits, sizeof x);
+    std::memcpy(&y, &ybits, sizeof y);
+    std::memcpy(&z, &zbits, sizeof z);
+
+    char line[160];
+    if (tag == 4) {
+        std::snprintf(line, sizeof line, "[cam] type=%d dist=%.1f\n", xbits, (double)y);
+    } else {
+        static const char* names[] = { "at", "eye", "rot", "up" };
+        std::snprintf(line, sizeof line, "[cam] %s=(%.2f,%.2f,%.2f)\n",
+                      names[tag], (double)x, (double)y, (double)z);
+    }
+    std::printf("%s", line);
+    std::fflush(stdout);
+    if (g_log) { std::fprintf(g_log, "%s", line); std::fflush(g_log); }
 }

@@ -85,6 +85,10 @@ extern "C" void arena_export_blastactor_get_slot(uint8_t* rdram, recomp_context*
 extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
+extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx);        // A1.5 camera probe log
+extern "C" void arena_cam_at_x_export(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
+extern "C" void arena_cam_at_y_export(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_cam_at_z_export(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
@@ -619,7 +623,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5');   /* 3=facing 4=anim 5=arena-measure */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6');   /* 3=facing 4=anim 5=arena-measure 6=camera */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -693,7 +697,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;
@@ -929,6 +933,10 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_blast_wz);
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
+    REGISTER_FUNC(arena_export_dbg_cam);
+    recomp::overlays::register_base_export("arena_cam_at_x", arena_cam_at_x_export);
+    recomp::overlays::register_base_export("arena_cam_at_y", arena_cam_at_y_export);
+    recomp::overlays::register_base_export("arena_cam_at_z", arena_cam_at_z_export);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

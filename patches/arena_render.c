@@ -96,6 +96,20 @@ extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (un
 DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
 DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log anim idx+frame */
 
+/* ---- A1.5 fixed arena camera ------------------------------------------- */
+#include "arena_cam.h"                      /* pose constants; no game types    */
+/* Native side owns the probe-mode gate AND the throttle, so this is called
+ * unconditionally every frame and the patch stays stateless (a patch-local
+ * counter aborts 0xC0000409). Floats cross as BIT PATTERNS - the export ABI
+ * takes no float arguments (notes 8.2). */
+DECLARE_FUNC(void, arena_export_dbg_cam, s32 tag, s32 x, s32 y, s32 z);
+DECLARE_FUNC(f32,  arena_cam_at_x);         /* arena centre, Hero world coords  */
+DECLARE_FUNC(f32,  arena_cam_at_y);
+DECLARE_FUNC(f32,  arena_cam_at_z);
+
+/* Bit-cast a float into an int arg for the export ABI. */
+static s32 fbits(f32 v) { union { f32 f; s32 i; } u; u.f = v; return u.i; }
+
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
 extern void func_8001ECB8(void);
@@ -131,6 +145,17 @@ void arena_render_routine(void) {
             if (!arena_export_is_actor_slot(k))
                 gObjects[k].actionState = ACTION_NONE;
         }
+
+        /* A1.5 camera probe. Sampled at routine ENTRY, i.e. before this frame's
+         * write but after the previous frame's - so once the override lands,
+         * these values proving equal to what we wrote is the evidence that
+         * nothing else stomps gView. Native side gates on ARENA_AUTO_BATTLE=6
+         * and throttles to one sample per 30 frames. */
+        arena_export_dbg_cam(0, fbits(gView.at.x),  fbits(gView.at.y),  fbits(gView.at.z));
+        arena_export_dbg_cam(1, fbits(gView.eye.x), fbits(gView.eye.y), fbits(gView.eye.z));
+        arena_export_dbg_cam(2, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
+        arena_export_dbg_cam(3, fbits(gView.up.x),  fbits(gView.up.y),  fbits(gView.up.z));
+        arena_export_dbg_cam(4, (s32)gCameraType,   fbits(gView.dist),  0);
     }
 
     func_80024744();
