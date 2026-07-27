@@ -499,8 +499,15 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
  * instead of confusing. Sim (0,0) is the arena centre. */
 extern "C" float arena_cam_at_dx(void);
 extern "C" float arena_cam_at_dz(void);
-extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * g_scale   + arena_cam_at_dx(); }
-extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z + arena_cam_at_dz(); }
+extern "C" int   arena_cam_follow(void);
+extern "C" float arena_cam_at_x(void) {
+    if (arena_cam_follow()) return arena_puppet_wx(0);   /* debug: track the player */
+    return g_origin_x + (0.0f - g_ref_sx) * g_scale   + arena_cam_at_dx();
+}
+extern "C" float arena_cam_at_z(void) {
+    if (arena_cam_follow()) return arena_puppet_wz(0);
+    return g_origin_z + (0.0f - g_ref_sz) * g_scale_z + arena_cam_at_dz();
+}
 extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT; }
 
 /* Calibration offsets for the camera target (ARENA_CAM_AT_DX / _DZ, default 0).
@@ -558,6 +565,49 @@ extern "C" float arena_cam_at_dz(void) { static const float v = cam_env("ARENA_C
  * few relaunches instead of by re-reading machine-C. The RE lists the throws as
  * {34, 36, 38, 39, 42, 47}, impacts as {43, 44, 47, 48, 49}, warp 7, idle 0 and
  * locomotion 1-8, so the set pose is most likely a near neighbour of 29. */
+/* DEBUG follow camera (ARENA_CAM_FOLLOW=1). The shipped camera is fixed on the
+ * arena centre, which is right for play but useless for inspecting an animation:
+ * at the framing distance the bomber is a couple of dozen pixels. With this on,
+ * `at` tracks player 0 so a close ARENA_CAM_DIST stays on him.
+ *
+ * Yaw is untouched, so the input mapping is unaffected - only the target moves.
+ * Inspection only; the fixed target is what ships. */
+extern "C" int arena_cam_follow(void) {
+    static const int on = []() {
+        const char* v = std::getenv("ARENA_CAM_FOLLOW");
+        return (v && v[0] == '1') ? 1 : 0;
+    }();
+    return on;
+}
+
+/* ANIM SWEEP (ARENA_ANIM_SWEEP=<ticks per index>, 0 = off). Cycles the player
+ * through every animation index, holding each for N ticks and logging it, so the
+ * right one can be identified in a single run instead of one relaunch per guess.
+ *
+ * Exists because the decomp's set/drop binding (state 0x0E -> anim 29) is
+ * MEDIUM confidence and both 29 and 30 read as throws in play. Watching the
+ * whole set is a faster and more honest answer than more machine-C reading. */
+extern "C" int arena_anim_sweep_index(void) {
+    static const int hold = []() {
+        const char* v = std::getenv("ARENA_ANIM_SWEEP");
+        if (v) { int n = std::atoi(v); if (n > 0 && n <= 600) return n; }
+        return 0;
+    }();
+    if (hold == 0) return -1;
+    static int frames = 0, idx = 0, last = -1;
+    if (++frames >= hold) { frames = 0; if (++idx > 52) idx = 0; }
+    if (idx != last) {
+        last = idx;
+        if (g_log) {
+            std::fprintf(g_log, "[animsweep] now playing idx=%d\n", idx);
+            std::fflush(g_log);
+        }
+        std::printf("[animsweep] now playing idx=%d\n", idx);
+        std::fflush(stdout);
+    }
+    return idx;
+}
+
 extern "C" int arena_set_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_SET_ANIM");

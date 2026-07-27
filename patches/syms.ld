@@ -118,3 +118,4 @@ arena_export_player_hp = 0x8F00021C;
 arena_export_player_stocks = 0x8F000220;
 arena_export_match_phase = 0x8F000224;
 arena_export_set_anim_index = 0x8F000228;
+arena_export_anim_sweep_index = 0x8F00022C;

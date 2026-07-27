@@ -141,6 +141,7 @@ DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
 DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
 DECLARE_FUNC(s32,  arena_export_set_anim_index);  /* ARENA_SET_ANIM, default 29 */
+DECLARE_FUNC(s32,  arena_export_anim_sweep_index); /* ARENA_ANIM_SWEEP; -1 = off */
 DECLARE_FUNC(s32,  arena_export_player_hp, s32 i);      /* A1.2g HUD: sim HP     */
 DECLARE_FUNC(s32,  arena_export_player_stocks, s32 i);  /* rounds won            */
 DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*               */
@@ -279,7 +280,15 @@ void arena_render_routine(void) {
         gBombCount   = 3;
         gFireCount   = 3;
         gGemCount    = 0;
-        gScore       = 0;
+        /* Normally 0 (the campaign score is meaningless here). During an anim
+         * sweep it shows the index currently playing, so the pose on screen and
+         * its number are visible together - identifying the right animation
+         * needs no correlating of wall-clock time against the log. This is the
+         * "repurpose the score field per player" idea, borrowed for debugging. */
+        {
+            s32 sweep_shown = arena_export_anim_sweep_index();
+            gScore = (s16)(sweep_shown >= 0 ? sweep_shown : 0);
+        }
     }
 
     /* Boss suppression: BEFORE the update loop runs any object's per-frame
@@ -511,9 +520,18 @@ void arena_render_routine(void) {
                  * a single trigger is replaced on the very next frame - with the
                  * camera on AND off, standing still AND moving. Re-assert while
                  * the native hold window is open and the walker has taken it. */
-                s32 set_anim = arena_export_set_anim_index();   /* ARENA_SET_ANIM */
-                if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != set_anim))
-                    func_8001C0EC(0, 0, set_anim, 1, (u32*)D_80115808);
+                /* ARENA_ANIM_SWEEP cycles every index so the right pose can be
+                 * identified by eye in ONE run; it overrides the set pose while
+                 * active and is off by default. */
+                s32 sweep = arena_export_anim_sweep_index();
+                if (sweep >= 0) {
+                    if (func_8001B880(0, 0) != sweep)
+                        func_8001C0EC(0, 0, sweep, 1, (u32*)D_80115808);
+                } else {
+                    s32 set_anim = arena_export_set_anim_index();   /* ARENA_SET_ANIM */
+                    if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != set_anim))
+                        func_8001C0EC(0, 0, set_anim, 1, (u32*)D_80115808);
+                }
                 /* Auto-verify probe (temporary): burst-log the live anim index +
                  * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
                 arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0),
