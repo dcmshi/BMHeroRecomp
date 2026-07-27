@@ -128,6 +128,13 @@ extern void func_80078168(f32 x, f32 y, f32 z);
 #define GQ_SEL  (*(volatile u8*)0x801776E0 & 1)
 #define GQ_H    ((volatile f32*)0x80177760)
 DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
+DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
+/* ZFAR, consumed by guPerspective in the in-level draw (decomp 71AA0.c:610) and
+ * set per-level from gLevelInfo[level]->unk2C (56800.c:372). Auto-named data
+ * symbol -> address literal (section 8.2). The decomp declares it as a union
+ * whose bytes[] alias is written by the per-object collision code, so write it
+ * AFTER the update loop and before the draw. */
+#define GAME_ZFAR (*(volatile f32*)0x801779C8)
 DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
 DECLARE_FUNC(f32,  arena_export_cam_at_y);
 DECLARE_FUNC(f32,  arena_export_cam_at_z);
@@ -267,6 +274,16 @@ void arena_render_routine(void) {
         /* A1.2g: the state at the moment of the fall. */
         arena_export_dbg_cam(8, (s32)gPlayerObject->actionState,
                                 (s32)gPlayerObject->unkA6, 0);
+
+        /* A1.5 FAR CLIP. Tag 9 logs the LEVEL's authored ZFAR, then we raise it.
+         * Measured: MAP_NITROS_1 already authors 8000 and the floor's far corner
+         * is only ~2400 away, so this is NOT the framing problem - see the note
+         * on arena_cam_zfar. Kept as a guard for maps that author a short plane.
+         * Written here, after the update loop, because the decomp declares this
+         * as a union whose bytes[] alias the per-object collision code writes
+         * (69AA0.c:393). */
+        arena_export_dbg_cam(9, fbits(GAME_ZFAR), fbits(arena_export_cam_zfar()), 0);
+        GAME_ZFAR = arena_export_cam_zfar();
 
         /* A1.2g FLOOR GUARD. The arena's floor polygon is SMALLER than the sim's
          * collidable bounds, so the sim can walk player 0 off the edge; the

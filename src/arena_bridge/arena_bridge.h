@@ -80,6 +80,7 @@ float arena_cam_at_x(void);
 float arena_cam_at_y(void);
 float arena_cam_at_z(void);
 float arena_cam_dist(void);   /* ARENA_CAM_DIST, env-overridable for framing */
+float arena_cam_zfar(void);   /* battle-mode far clip; the level's own is too near */
 #ifdef __cplusplus
 }
 #endif

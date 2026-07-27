@@ -457,9 +457,25 @@ extern "C" void arena_dbg_anim(int idx, int frame) {
  * origin capture is ever wrong, the camera is wrong in the same direction as the
  * actors, which keeps the picture self-consistent and makes the error obvious
  * instead of confusing. Sim (0,0) is the arena centre. */
-extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * g_scale;   }
-extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z; }
+extern "C" float arena_cam_at_dx(void);
+extern "C" float arena_cam_at_dz(void);
+extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * g_scale   + arena_cam_at_dx(); }
+extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z + arena_cam_at_dz(); }
 extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT; }
+
+/* Calibration offsets for the camera target (ARENA_CAM_AT_DX / _DZ, default 0).
+ * Shifting `at` by a KNOWN world amount and measuring how far the picture moves
+ * is the only way to check our world->screen model without guessing at pixels:
+ * if the image shifts by the predicted amount in the predicted direction, the
+ * model is right and any remaining confusion is about what we're looking at. */
+namespace {
+    float cam_env(const char* name) {
+        const char* v = std::getenv(name);
+        return v ? (float)std::atof(v) : 0.0f;
+    }
+}
+extern "C" float arena_cam_at_dx(void) { static const float v = cam_env("ARENA_CAM_AT_DX"); return v; }
+extern "C" float arena_cam_at_dz(void) { static const float v = cam_env("ARENA_CAM_AT_DZ"); return v; }
 
 /* Camera distance, overridable at runtime with ARENA_CAM_DIST. arena_cam.h says
  * this value "is iterated by screenshot" — but it lives in a PATCH header, so
@@ -468,6 +484,31 @@ extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT;
  * of whether our gView write drives the picture at all: if the render doesn't
  * move when this changes, something downstream is ignoring the pose. The
  * compile-time constant remains the default and the shipped value. */
+/* Far clip plane for battle mode, overridable with ARENA_CAM_ZFAR.
+ *
+ * ZFAR is D_801779C8.raw (the debug overlay literally prints "ZFAR"), set per
+ * level from gLevelInfo[level]->unk2C (decomp src/code/56800.c:372) and consumed
+ * by guPerspective in the in-level draw (71AA0.c:610).
+ *
+ * IT IS NOT THE FRAMING PROBLEM. The hypothesis was that the level's authored
+ * plane, sized for the map's own low/close rail camera, was clipping the arena's
+ * far edge under our much higher camera. MEASURED (probe tag 9, 2026-07-27):
+ * MAP_NITROS_1 already authors ZFAR = 8000, and the floor's far corner sits only
+ * ~2400 away at ARENA_CAM_DIST 1800. Overriding it changed nothing.
+ *
+ * Kept as a cheap guard for maps that DO author a short plane, and because the
+ * probe tag that logs the level's value is worth having. 8000 matches the game's
+ * own usage elsewhere (4DFF0.c: near 10, far 8000), so the near/far ratio stays
+ * within precedent for the N64's 16-bit depth. */
+extern "C" float arena_cam_zfar(void) {
+    static const float f = []() {
+        const char* v = std::getenv("ARENA_CAM_ZFAR");
+        if (v) { float x = (float)std::atof(v); if (x > 0.0f) return x; }
+        return 8000.0f;
+    }();
+    return f;
+}
+
 extern "C" float arena_cam_dist(void) {
     static const float d = []() {
         const char* v = std::getenv("ARENA_CAM_DIST");
@@ -693,7 +734,7 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
     static const bool  armed = (mode != nullptr && std::atoi(mode) == 6);
     if (!armed) return;
-    if (tag < 0 || tag > 8) return;
+    if (tag < 0 || tag > 9) return;
 
     /* A1.2g floor-extent tracker. Runs EVERY frame, BEFORE the log throttle -
      * a 30-frame sample is far too coarse to locate a floor edge.
@@ -745,12 +786,16 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
         std::snprintf(line, sizeof line, "[cam] state=%d unkA6=%d\n", xbits, ybits);
     } else if (tag == 4) {
         std::snprintf(line, sizeof line, "[cam] type=%d dist=%.1f\n", xbits, (double)y);
+    } else if (tag == 9) {
+        /* x = the LEVEL's authored ZFAR, sampled BEFORE our write; y = ours. */
+        std::snprintf(line, sizeof line, "[cam] zfar level=%.1f -> ours=%.1f\n",
+                      (double)x, (double)y);
     } else {
         /* tags 5/6 are the SAME fields sampled immediately AFTER our write, so a
          * post-vs-entry comparison shows whether anything stomps gView between
          * frames. Distinguishes "our write never ran" from "it ran and was
          * overwritten" - two very different bugs that look identical at entry. */
-        static const char* names[] = { "at", "eye", "rot", "up", "", "wrote_rot", "wrote_at", "ppos" };
+        static const char* names[] = { "at", "eye", "rot", "up", "", "wrote_rot", "wrote_at", "ppos", "", "zfar" };
         std::snprintf(line, sizeof line, "[cam] %s=(%.2f,%.2f,%.2f)\n",
                       names[tag], (double)x, (double)y, (double)z);
     }

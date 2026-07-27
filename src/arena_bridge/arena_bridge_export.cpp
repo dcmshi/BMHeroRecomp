@@ -210,6 +210,7 @@ extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context*
 }
 
 extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_dist()); }
+extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_zfar()); }
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_x()); }
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }

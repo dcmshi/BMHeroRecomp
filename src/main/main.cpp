@@ -97,6 +97,7 @@ extern "C" void arena_export_floor_raster_py(uint8_t* rdram, recomp_context* ctx
 extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx);      // A1.5 framing distance
+extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx);      // A1.5 far clip
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -974,6 +975,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_floor_raster_pz);
     REGISTER_FUNC(arena_export_floor_raster_report);
     REGISTER_FUNC(arena_export_cam_dist);
+    REGISTER_FUNC(arena_export_cam_zfar);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);
