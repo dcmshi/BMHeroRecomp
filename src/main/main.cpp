@@ -103,6 +103,7 @@ extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx);     
 extern "C" void arena_export_player_hp(uint8_t* rdram, recomp_context* ctx);     // A1.2g HUD
 extern "C" void arena_export_player_stocks(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_match_phase(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_set_anim_index(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -1028,6 +1029,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_player_hp);
     REGISTER_FUNC(arena_export_player_stocks);
     REGISTER_FUNC(arena_export_match_phase);
+    REGISTER_FUNC(arena_export_set_anim_index);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);

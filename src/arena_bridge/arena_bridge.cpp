@@ -549,6 +549,24 @@ extern "C" float arena_cam_at_dz(void) { static const float v = cam_env("ARENA_C
  * EVERY frame, so the pose is replaced on the very next frame - measured, with
  * the camera both on and off, standing still and moving. Holding means
  * re-triggering whenever the walker has taken the anim away. */
+/* Which animation index the set-bomb pose plays. ARENA_SET_ANIM overrides.
+ *
+ * Default 29 is the decomp's set/drop pose (code_extra_0 state 0x0E ->
+ * PLAYER_ACTION_DROP_BOMB_0), but that binding is recorded at MEDIUM confidence -
+ * read from machine-C, never visually confirmed - and feel testing reports it
+ * looks like a THROW. Made tunable so the right index can be found by eye in a
+ * few relaunches instead of by re-reading machine-C. The RE lists the throws as
+ * {34, 36, 38, 39, 42, 47}, impacts as {43, 44, 47, 48, 49}, warp 7, idle 0 and
+ * locomotion 1-8, so the set pose is most likely a near neighbour of 29. */
+extern "C" int arena_set_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_SET_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= 0 && n < 64) return n; }
+        return 29;
+    }();
+    return idx;
+}
+
 extern "C" int arena_set_hold(void) {
     return (g_anim_since_set >= 0 && g_anim_since_set < 24) ? 1 : 0;
 }

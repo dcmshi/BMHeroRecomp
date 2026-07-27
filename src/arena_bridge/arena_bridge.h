@@ -87,6 +87,7 @@ float arena_cam_dist(void);   /* ARENA_CAM_DIST, env-overridable for framing */
 float arena_cam_zfar(void);   /* battle-mode far clip; the level's own is too near */
 int   arena_cam_enabled(void);/* 0 when ARENA_CAM_OFF=1 - runtime A/B for the camera */
 int   arena_set_hold(void);   /* 1 while the set pose should be re-asserted */
+int   arena_set_anim_index(void);  /* ARENA_SET_ANIM; default 29 */
 #ifdef __cplusplus
 }
 #endif

@@ -215,6 +215,7 @@ extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx) { (vo
 extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_zfar()); }
 extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_enabled()); }
 extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_set_hold()); }
+extern "C" void arena_export_set_anim_index(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_set_anim_index()); }
 /* A1.2g HUD accessors. */
 extern "C" void arena_export_player_hp(uint8_t* rdram, recomp_context* ctx) { _return(ctx, arena_player_hp(_arg<0, int>(rdram, ctx))); }
 extern "C" void arena_export_player_stocks(uint8_t* rdram, recomp_context* ctx) { _return(ctx, arena_player_stocks(_arg<0, int>(rdram, ctx))); }

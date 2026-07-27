@@ -140,6 +140,7 @@ DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
 DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
+DECLARE_FUNC(s32,  arena_export_set_anim_index);  /* ARENA_SET_ANIM, default 29 */
 DECLARE_FUNC(s32,  arena_export_player_hp, s32 i);      /* A1.2g HUD: sim HP     */
 DECLARE_FUNC(s32,  arena_export_player_stocks, s32 i);  /* rounds won            */
 DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*               */
@@ -510,8 +511,9 @@ void arena_render_routine(void) {
                  * a single trigger is replaced on the very next frame - with the
                  * camera on AND off, standing still AND moving. Re-assert while
                  * the native hold window is open and the walker has taken it. */
-                if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != 29))
-                    func_8001C0EC(0, 0, 29, 1, (u32*)D_80115808);
+                s32 set_anim = arena_export_set_anim_index();   /* ARENA_SET_ANIM */
+                if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != set_anim))
+                    func_8001C0EC(0, 0, set_anim, 1, (u32*)D_80115808);
                 /* Auto-verify probe (temporary): burst-log the live anim index +
                  * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
                 arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0),
