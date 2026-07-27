@@ -20,7 +20,7 @@ float arena_get_bomber_off_x(int i);   /* A1.2b: (sim_pos_i - sim_pos_0).x * sca
 float arena_get_bomber_off_z(int i);
 float arena_get_bomber_yaw(int i);
 /* A1.2b puppet actors: state + frozen-origin world placement (patch-callable). */
-void  arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz);
+void  arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz, int level);
 int   arena_puppet_ready(void);
 int   arena_spawn_gate(void);   /* A1.2d: 1 only after ~90 routine frames (heap-ready gate) */
 int   arena_routine_seen(void); /* A1.2f: 1 once the battle render routine has run (mash-stop) */
@@ -55,7 +55,34 @@ void  arena_blastactor_set_slot(int i, int slot);   /* 4 pooled blast actors */
 int   arena_blastactor_get_slot(int i);
 /* A1.4 set-bomb animation (patch-callable). */
 int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
-void  arena_dbg_anim(int idx, int frame);   /* burst-log live player anim idx+frame */
+void  arena_dbg_anim(int idx, int frame, int state);  /* anim idx+frame+actionState */
+/* A1.5 camera probe. tag: 0=at 1=eye 2=rot 3=up 4=misc(x=gCameraType as a plain
+ * int, y=dist bits). Other tags carry three float BIT PATTERNS - the export ABI
+ * takes no float arguments. Probe-mode gating and throttling are native-side, so
+ * the patch can call this unconditionally and stay stateless. */
+void  arena_dbg_cam(int tag, int xbits, int ybits, int zbits);
+/* A1.2g floor guard: 1 = player is off-map, restore arena_floor_last_*. */
+int   arena_floor_guard(int xbits, int ybits, int zbits);
+float arena_floor_last_x(void);
+float arena_floor_last_y(void);
+float arena_floor_last_z(void);
+/* A1.2g floor raster (probe mode 7): native owns the grid cursor, the patch
+ * supplies the game's own ground-query answer for each point. */
+int   arena_floor_raster_active(void);   /* 1 while a raster is in progress    */
+int   arena_floor_raster_next(void);     /* 1 = a point is ready in px/py/pz   */
+float arena_floor_raster_px(void);
+float arena_floor_raster_py(void);
+float arena_floor_raster_pz(void);
+void  arena_floor_raster_report(int sel, int hbits);   /* D_801776E0&1, D_80177760[sel] */
+/* A1.5: arena centre in Hero world coords (same frozen-origin mapping as the
+ * puppets), for gView.at. */
+float arena_cam_at_x(void);
+float arena_cam_at_y(void);
+float arena_cam_at_z(void);
+float arena_cam_dist(void);   /* ARENA_CAM_DIST, env-overridable for framing */
+float arena_cam_zfar(void);   /* battle-mode far clip; the level's own is too near */
+int   arena_cam_enabled(void);/* 0 when ARENA_CAM_OFF=1 - runtime A/B for the camera */
+int   arena_set_hold(void);   /* 1 while the set pose should be re-asserted */
 #ifdef __cplusplus
 }
 #endif

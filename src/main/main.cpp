@@ -85,6 +85,24 @@ extern "C" void arena_export_blastactor_get_slot(uint8_t* rdram, recomp_context*
 extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
+extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx);        // A1.5 camera probe log
+extern "C" void arena_export_floor_guard(uint8_t* rdram, recomp_context* ctx);    // A1.2g floor guard
+extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_last_y(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_last_z(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_active(uint8_t* rdram, recomp_context* ctx);  // A1.2g floor raster
+extern "C" void arena_export_floor_raster_next(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_px(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_py(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx);      // A1.5 framing distance
+extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx);      // A1.5 far clip
+extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx);   // A1.5 runtime A/B
+extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx);      // A1.4 set-pose hold
+extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
+extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
@@ -619,7 +637,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5');   /* 3=facing 4=anim 5=arena-measure */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -660,13 +678,38 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 static uint32_t ap = 0;
                 ap++;
                 if (ap > 30 && ap < 520) *y = -1.0f;            /* keep moving (locomotion anims live) */
-                if ((ap >= 240 && ap < 248) || (ap >= 300 && ap < 308)) {
+                /* STANDING set. The player must be ACTUALLY STOPPED, not merely
+                 * have had the stick released: the sim needs stop_ticks = 6 to
+                 * come to rest (tools/tune_metrics.baseline), and the game walker
+                 * stomps the set pose on the very next frame if the player is
+                 * still moving (the documented A1.4 limitation, §8.5c).
+                 *
+                 * The old timing released at 200 and set at 204 — FOUR frames,
+                 * inside the 6-tick stop. That made the gate a coin flip on
+                 * whether the player had quite stopped, and it is why this looked
+                 * like an A1.5 camera regression: the [animw] window shows idx 29
+                 * replaced by idx 3 after ONE frame with the camera both ON and
+                 * OFF. Release at 200, set at 215 (15 frames, 2.5x the stop
+                 * time), and keep standing so the pose has room to play out. */
+                if (ap >= 200 && ap < 260) {
+                    *y = 0.0f;                                   /* stand still */
+                    if (ap >= 215 && ap < 223) *buttons |= 0x2000;   /* then set */
+                }
+                if ((ap >= 300 && ap < 308) || (ap >= 360 && ap < 368)) {
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
-                if (ap >= 360 && ap < 368) {
-                    *y = 0.0f;                                   /* set while STANDING (control) */
-                    *buttons |= 0x2000;
-                }
+            }
+            if (mode && mode[0] == '6') {
+                /* A1.5 camera probe: sweep all four directions so the [cam] ppos
+                 * samples span the arena. The min/max of those give the REAL
+                 * traversable extent in Hero coords, hence the true centre -
+                 * measured, not derived from the (run-varying) spawn anchor. */
+                static uint32_t cs = 0;
+                cs++;
+                if      (cs < 120) *y = -1.0f;
+                else if (cs < 260) *x =  1.0f;
+                else if (cs < 400) *y =  1.0f;
+                else               *x = -1.0f;
             }
             if (mode && mode[0] == '5') {
                 /* TEMP arena-measurement sweep: drive all four stick directions
@@ -693,7 +736,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;
@@ -929,6 +972,24 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_blast_wz);
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
+    REGISTER_FUNC(arena_export_dbg_cam);
+    REGISTER_FUNC(arena_export_floor_guard);
+    REGISTER_FUNC(arena_export_floor_last_x);
+    REGISTER_FUNC(arena_export_floor_last_y);
+    REGISTER_FUNC(arena_export_floor_last_z);
+    REGISTER_FUNC(arena_export_floor_raster_active);
+    REGISTER_FUNC(arena_export_floor_raster_next);
+    REGISTER_FUNC(arena_export_floor_raster_px);
+    REGISTER_FUNC(arena_export_floor_raster_py);
+    REGISTER_FUNC(arena_export_floor_raster_pz);
+    REGISTER_FUNC(arena_export_floor_raster_report);
+    REGISTER_FUNC(arena_export_cam_dist);
+    REGISTER_FUNC(arena_export_cam_zfar);
+    REGISTER_FUNC(arena_export_cam_enabled);
+    REGISTER_FUNC(arena_export_set_hold);
+    REGISTER_FUNC(arena_export_cam_at_x);
+    REGISTER_FUNC(arena_export_cam_at_y);
+    REGISTER_FUNC(arena_export_cam_at_z);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

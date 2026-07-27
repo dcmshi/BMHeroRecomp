@@ -1,0 +1,231 @@
+[arena] tick 60 hash cd4370f5
+[arena] battle mode -> ON
+[anim] idx=7 frame=2
+[anim] idx=7 frame=4
+[anim] idx=7 frame=6
+[anim] idx=7 frame=8
+[anim] idx=7 frame=10
+[anim] idx=7 frame=12
+[anim] idx=7 frame=14
+[anim] idx=7 frame=16
+[anim] idx=8 frame=2
+[anim] idx=8 frame=4
+[anim] idx=8 frame=6
+[anim] idx=8 frame=8
+[anim] idx=8 frame=10
+[anim] idx=8 frame=0
+[anim] idx=0 frame=2
+[anim] idx=0 frame=4
+[anim] idx=3 frame=2
+[anim] idx=3 frame=4
+[anim] idx=3 frame=6
+[anim] idx=3 frame=8
+[anim] idx=3 frame=10
+[anim] idx=3 frame=12
+[anim] idx=3 frame=14
+[anim] idx=3 frame=16
+[capture] level=15 anchor origin(0.00,240.00,0.00) ref_s(0,0,0) scale=120.0 | player was at (-130.60,240.00,108.19) d=(-130.60,108.19)
+[anim] idx=8 frame=2
+[anim] idx=8 frame=4
+[anim] idx=8 frame=6
+[anim] idx=47 frame=2
+[anim] idx=47 frame=4
+[anim] idx=47 frame=6
+[anim] idx=47 frame=8
+[anim] idx=47 frame=10
+[anim] idx=47 frame=12
+[anim] idx=47 frame=14
+[anim] idx=47 frame=16
+[anim] idx=48 frame=2
+[anim] idx=48 frame=4
+[anim] idx=48 frame=6
+[anim] idx=48 frame=8
+[anim] idx=48 frame=10
+[anim] idx=48 frame=12
+[simpos] t124 p0(-6.50,-6.50) p1(6.50,6.50) p2(-6.50,6.50) p3(6.50,-6.50)
+[bombs] t124 live=0 p0.held=0
+[anim] idx=48 frame=14
+[anim] idx=48 frame=16
+[anim] idx=37 frame=2
+[anim] idx=37 frame=4
+[anim] idx=37 frame=6
+[anim] idx=37 frame=8
+[anim] idx=37 frame=10
+[anim] idx=37 frame=12
+[anim] idx=37 frame=14
+[anim] idx=37 frame=16
+[dbg] tag=50 val=0x00000000 (0)
+[dbg] tag=60 val=0x00000000 (0)
+[dbg] tag=51 val=0x00000000 (0)
+[dbg] tag=61 val=0x00000000 (0)
+[dbg] tag=52 val=0x00000000 (0)
+[dbg] tag=62 val=0x00000000 (0)
+[dbg] tag=53 val=0x00000000 (0)
+[dbg] tag=63 val=0x00000000 (0)
+[dbg] tag=43 val=0xffffffff (4294967295)
+[dbg] tag=40 val=0x0000000e (14)
+[dbg] tag=40 val=0x0000000f (15)
+[dbg] tag=40 val=0x00000010 (16)
+[anim] idx=3 frame=2
+[anim] idx=3 frame=4
+[anim] idx=3 frame=6
+[anim] idx=3 frame=8
+[anim] idx=3 frame=10
+[anim] idx=3 frame=12
+[anim] idx=3 frame=14
+[anim] idx=3 frame=16
+[anim] idx=2 frame=26
+[anim] idx=2 frame=28
+[earlybtn] t167 buttons=0x4
+[anim] idx=2 frame=30
+[earlybtn] t168 buttons=0x4
+[anim] idx=2 frame=32
+[earlybtn] t169 buttons=0x4
+[anim] idx=1 frame=44
+[earlybtn] t170 buttons=0x4
+[anim] idx=1 frame=46
+[earlybtn] t171 buttons=0x4
+[anim] idx=1 frame=48
+[earlybtn] t172 buttons=0x4
+[anim] idx=1 frame=50
+[earlybtn] t173 buttons=0x4
+[anim] idx=3 frame=26
+[anim] idx=3 frame=28
+[anim] idx=3 frame=30
+[anim] idx=3 frame=0
+[anim] idx=3 frame=2
+[anim] idx=3 frame=4
+[anim] idx=3 frame=6
+[anim] idx=3 frame=8
+[simpos] t184 p0(-6.43,-6.67) p1(6.50,6.50) p2(-6.50,6.50) p3(6.50,-6.50)
+[bombs] t184 live=0 p0.held=0
+[setdbg] t215 bi=0 live=1 simY=0.000 wy=240.00 originY=240.00 slot=17
+[anim] idx=29 frame=0
+[animw] +00 idx=29 frame=0 state=4
+[anim] idx=3 frame=2
+[animw] +01 idx=3 frame=2 state=4
+[anim] idx=3 frame=4
+[animw] +02 idx=3 frame=4 state=4
+[anim] idx=3 frame=6
+[animw] +03 idx=3 frame=6 state=4
+[anim] idx=3 frame=8
+[animw] +04 idx=3 frame=8 state=4
+[anim] idx=8 frame=2
+[animw] +05 idx=8 frame=2 state=32
+[anim] idx=8 frame=4
+[animw] +06 idx=8 frame=4 state=32
+[anim] idx=8 frame=6
+[animw] +07 idx=8 frame=6 state=32
+[anim] idx=47 frame=2
+[animw] +08 idx=47 frame=2 state=29
+[anim] idx=47 frame=4
+[animw] +09 idx=47 frame=4 state=29
+[anim] idx=47 frame=6
+[animw] +10 idx=47 frame=6 state=29
+[anim] idx=47 frame=8
+[animw] +11 idx=47 frame=8 state=29
+[anim] idx=47 frame=10
+[animw] +12 idx=47 frame=10 state=29
+[anim] idx=47 frame=12
+[animw] +13 idx=47 frame=12 state=29
+[anim] idx=47 frame=14
+[animw] +14 idx=47 frame=14 state=29
+[anim] idx=47 frame=16
+[animw] +15 idx=47 frame=16 state=29
+[animw] +16 idx=47 frame=18 state=29
+[animw] +17 idx=47 frame=0 state=29
+[animw] +18 idx=47 frame=2 state=29
+[animw] +19 idx=47 frame=4 state=29
+[animw] +20 idx=47 frame=6 state=29
+[animw] +21 idx=47 frame=8 state=29
+[animw] +22 idx=47 frame=10 state=29
+[animw] +23 idx=47 frame=12 state=29
+[animw] +24 idx=47 frame=14 state=29
+[animw] +25 idx=47 frame=16 state=29
+[animw] +26 idx=47 frame=18 state=29
+[anim] idx=48 frame=2
+[animw] +27 idx=48 frame=2 state=30
+[anim] idx=48 frame=4
+[animw] +28 idx=48 frame=4 state=30
+[simpos] t244 p0(-7.57,-6.59) p1(6.50,6.50) p2(-6.50,6.50) p3(6.50,-6.50)
+[bombs] t244 live=1 p0.held=0
+[anim] idx=48 frame=6
+[animw] +29 idx=48 frame=6 state=30
+[setdbg] t245 bi=1 live=2 simY=0.000 wy=240.00 originY=240.00 slot=18
+[anim] idx=29 frame=0
+[animw] +00 idx=29 frame=0 state=30
+[anim] idx=37 frame=2
+[animw] +01 idx=37 frame=2 state=31
+[anim] idx=37 frame=4
+[animw] +02 idx=37 frame=4 state=31
+[anim] idx=37 frame=6
+[animw] +03 idx=37 frame=6 state=31
+[anim] idx=37 frame=8
+[animw] +04 idx=37 frame=8 state=31
+[anim] idx=37 frame=10
+[animw] +05 idx=37 frame=10 state=31
+[anim] idx=37 frame=12
+[animw] +06 idx=37 frame=12 state=31
+[anim] idx=37 frame=14
+[animw] +07 idx=37 frame=14 state=31
+[anim] idx=37 frame=16
+[animw] +08 idx=37 frame=16 state=31
+[animw] +09 idx=37 frame=18 state=31
+[animw] +10 idx=37 frame=20 state=31
+[animw] +11 idx=37 frame=22 state=31
+[animw] +12 idx=37 frame=24 state=31
+[animw] +13 idx=37 frame=26 state=31
+[animw] +14 idx=37 frame=28 state=31
+[animw] +15 idx=37 frame=30 state=31
+[animw] +16 idx=37 frame=32 state=31
+[animw] +17 idx=37 frame=34 state=31
+[animw] +18 idx=37 frame=36 state=31
+[animw] +19 idx=37 frame=38 state=31
+[animw] +20 idx=37 frame=38 state=31
+[anim] idx=3 frame=2
+[animw] +21 idx=3 frame=2 state=4
+[anim] idx=3 frame=4
+[animw] +22 idx=3 frame=4 state=4
+[anim] idx=3 frame=6
+[animw] +23 idx=3 frame=6 state=4
+[anim] idx=3 frame=8
+[animw] +24 idx=3 frame=8 state=4
+[anim] idx=3 frame=10
+[animw] +25 idx=3 frame=10 state=4
+[anim] idx=3 frame=12
+[animw] +26 idx=3 frame=12 state=4
+[anim] idx=3 frame=14
+[animw] +27 idx=3 frame=14 state=4
+[anim] idx=3 frame=16
+[animw] +28 idx=3 frame=16 state=4
+[animw] +29 idx=3 frame=18 state=4
+[animw] +30 idx=3 frame=20 state=4
+[animw] +31 idx=3 frame=22 state=4
+[animw] +32 idx=3 frame=24 state=4
+[animw] +33 idx=3 frame=26 state=4
+[animw] +34 idx=3 frame=28 state=4
+[animw] +35 idx=3 frame=30 state=4
+[animw] +36 idx=3 frame=0 state=4
+[animw] +37 idx=3 frame=2 state=4
+[animw] +38 idx=3 frame=4 state=4
+[animw] +39 idx=3 frame=6 state=4
+[simpos] t304 p0(-7.57,-5.31) p1(6.50,6.50) p2(-6.50,6.50) p3(6.50,-6.50)
+[bombs] t304 live=2 p0.held=0
+[anim] idx=2 frame=46
+[anim] idx=2 frame=0
+[anim] idx=2 frame=2
+[anim] idx=2 frame=4
+[anim] idx=1 frame=6
+[anim] idx=1 frame=8
+[anim] idx=1 frame=10
+[anim] idx=1 frame=12
+[anim] idx=0 frame=12
+[anim] idx=0 frame=14
+[anim] idx=0 frame=16
+[anim] idx=0 frame=18
+[anim] idx=0 frame=20
+[anim] idx=0 frame=22
+[anim] idx=0 frame=24
+[anim] idx=0 frame=26
+[simpos] t364 p0(-7.57,-4.93) p1(6.50,6.50) p2(-6.50,6.50) p3(6.50,-6.50)
+[bombs] t364 live=1 p0.held=0

@@ -15,7 +15,7 @@ DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
 
 /* A1.2b puppet exports: native holds the frozen world origin + slot table
  * (patches must be stateless); we read placement back each frame. */
-DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz);
+DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz, s32 level);
 DECLARE_FUNC(s32,  arena_export_puppet_ready);
 DECLARE_FUNC(s32,  arena_export_spawn_gate);   /* A1.2d: 1 only after ~90 frames (heap-ready) */
 DECLARE_FUNC(s32,  arena_export_draw_gate);    /* A1.2e: 1 after ~30 frames (routine1 restore) */
@@ -94,7 +94,104 @@ extern s32 D_80115808[];                          /* code_extra_0 player anim ta
 extern s32 func_8001B880(s32 objId, s32 part);    /* live anim index (unk14) */
 extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (unk24) */
 DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
-DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log anim idx+frame */
+DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame, s32 state);  /* anim idx+frame+actionState */
+
+/* ---- A1.5 fixed arena camera ------------------------------------------- */
+#include "arena_cam.h"                      /* pose constants; no game types    */
+/* Native side owns the probe-mode gate AND the throttle, so this is called
+ * unconditionally every frame and the patch stays stateless (a patch-local
+ * counter aborts 0xC0000409). Floats cross as BIT PATTERNS - the export ABI
+ * takes no float arguments (notes 8.2). */
+DECLARE_FUNC(void, arena_export_dbg_cam, s32 tag, s32 x, s32 y, s32 z);
+DECLARE_FUNC(s32,  arena_export_floor_guard, s32 x, s32 y, s32 z);  /* A1.2g */
+DECLARE_FUNC(f32,  arena_export_floor_last_x);
+DECLARE_FUNC(f32,  arena_export_floor_last_y);
+DECLARE_FUNC(f32,  arena_export_floor_last_z);
+/* A1.2g floor raster (ARENA_AUTO_BATTLE=7). Native owns the grid cursor and the
+ * accumulator; the patch just answers "is there floor at this point?" using the
+ * game's own ground query. See the block at the end of arena_render_routine. */
+DECLARE_FUNC(s32,  arena_export_floor_raster_active);
+DECLARE_FUNC(s32,  arena_export_floor_raster_next);
+DECLARE_FUNC(f32,  arena_export_floor_raster_px);
+DECLARE_FUNC(f32,  arena_export_floor_raster_py);
+DECLARE_FUNC(f32,  arena_export_floor_raster_pz);
+DECLARE_FUNC(void, arena_export_floor_raster_report, s32 sel, s32 hbits);
+/* The game's ground query (decomp src/code/69AA0.c:205). Pure: it takes only a
+ * position and refreshes the collision-result globals below - no caller context,
+ * no object index. Every object's own ground handling calls it the same way. */
+extern void func_80078168(f32 x, f32 y, f32 z);
+/* Its results. Auto-named D_ data symbols are reached by ADDRESS LITERAL (§8.2)
+ * rather than by extern: the literal form is proven, and a symbol that fails to
+ * resolve through the patch reloc path corrupts silently. GQ_SEL selects which
+ * of the two result slots holds the answer; the game's own "no floor here" test
+ * is GQ_SEL==0 && GQ_H[0]==-30000.0f (69AA0.c:401). */
+#define GQ_SEL  (*(volatile u8*)0x801776E0 & 1)
+#define GQ_H    ((volatile f32*)0x80177760)
+DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
+DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
+DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
+DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
+/* ZFAR, consumed by guPerspective in the in-level draw (decomp 71AA0.c:610) and
+ * set per-level from gLevelInfo[level]->unk2C (56800.c:372). Auto-named data
+ * symbol -> address literal (section 8.2). The decomp declares it as a union
+ * whose bytes[] alias is written by the per-object collision code, so write it
+ * AFTER the update loop and before the draw. */
+#define GAME_ZFAR (*(volatile f32*)0x801779C8)
+DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
+DECLARE_FUNC(f32,  arena_export_cam_at_y);
+DECLARE_FUNC(f32,  arena_export_cam_at_z);
+
+/* Bit-cast a float into an int arg for the export ABI. */
+static s32 fbits(f32 v) { union { f32 f; s32 i; } u; u.f = v; return u.i; }
+
+/* Stamp the fixed arena pose onto gView. Writes ONLY at/rot/dist: func_8001994C
+ * (decomp src/boot/17930.c:605) derives eye and up.y from exactly these, and the
+ * probe confirmed its formula reproduces the live eye to 2dp.
+ *
+ * Called TWICE per frame, and both are load-bearing:
+ *   - BEFORE func_80024744, because that routine rotates gActiveContStickX/Y in
+ *     place by gView.rot.y — the stick must see our stable yaw, not the rail's.
+ *   - AFTER it, because the game's own camera update runs INSIDE that call and
+ *     reverts everything. Measured: we write rot=(60,0,0), and the next frame's
+ *     entry reads back rot=(20,2,0). The post-write is what the draw actually
+ *     sees. */
+static void arena_cam_stamp(void) {
+    f32 ax;
+    if (!arena_export_cam_enabled()) return;   /* ARENA_CAM_OFF=1: runtime A/B */
+    ax = arena_export_cam_at_x();
+    f32 ay = arena_export_cam_at_y();
+    f32 az = arena_export_cam_at_z();
+    /* Distance comes from native so it can be swept with the ARENA_CAM_DIST env
+     * var at runtime; the header constant is still the default and the shipped
+     * value. Framing was a full patch rebuild per trial before this. */
+    f32 dist = arena_export_cam_dist();
+
+    gView.at.x  = ax;
+    gView.at.y  = ay;
+    gView.at.z  = az;
+    gView.rot.x = ARENA_CAM_PITCH_DEG;   /* pitch; the game's own was 20deg     */
+    gView.rot.y = ARENA_CAM_YAW_DEG;     /* the value that MUST stay fixed      */
+    gView.rot.z = 0.0f;
+    gView.dist  = dist;
+
+    /* eye/up written EXPLICITLY. func_8001994C would derive them from the above
+     * (decomp src/boot/17930.c:605), but it is gated on D_8016E134 == 0 and that
+     * gate is evidently closed here: with only at/rot/dist written, the picture
+     * was PIXEL-IDENTICAL across a 2x change of ARENA_CAM_DIST, and the logged
+     * eye never moved off the rail camera's last value. So we finish the job
+     * ourselves, using the game's own formula (guLookAt consumes eye/at/up).
+     *
+     * Same trig as the header's model, inlined here with no runtime calls:
+     *   eye = at + dist * (cos(yaw+90)*cos(pitch), sin(pitch), sin(yaw+90)*cos(pitch))
+     * At yaw 0 that is at + (0, dist*sin(pitch), dist*cos(pitch)) — +Z and above,
+     * which puts the arena's long axis horizontal. */
+    gView.eye.x = ax + dist * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.eye.y = ay + dist * ARENA_CAM_SIN_PITCH;
+    gView.eye.z = az + dist * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.up.x  = 0.0f;
+    gView.up.y  = 1.0f;   /* pitch 60 is < 90, so the game's rule gives +1 */
+    gView.up.z  = 0.0f;
+}
 
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
@@ -131,9 +228,82 @@ void arena_render_routine(void) {
             if (!arena_export_is_actor_slot(k))
                 gObjects[k].actionState = ACTION_NONE;
         }
+
+        /* A1.5 camera probe. Sampled at routine ENTRY, i.e. before this frame's
+         * write but after the previous frame's - so once the override lands,
+         * these values proving equal to what we wrote is the evidence that
+         * nothing else stomps gView. Native side gates on ARENA_AUTO_BATTLE=6
+         * and throttles to one sample per 30 frames. */
+        arena_export_dbg_cam(0, fbits(gView.at.x),  fbits(gView.at.y),  fbits(gView.at.z));
+        arena_export_dbg_cam(1, fbits(gView.eye.x), fbits(gView.eye.y), fbits(gView.eye.z));
+        arena_export_dbg_cam(2, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
+        arena_export_dbg_cam(3, fbits(gView.up.x),  fbits(gView.up.y),  fbits(gView.up.z));
+        arena_export_dbg_cam(4, (s32)gCameraType,   fbits(gView.dist),  0);
+
+        /* A1.5 FIXED CAMERA. Re-asserted EVERY frame (the established idiom —
+         * the boss re-activates if its sweep stops, notes 8.13).
+         *
+         * ORDERING IS LOAD-BEARING: func_80024744 (called just below) rotates
+         * gActiveContStickX/Y in place by gView.rot.y. Writing the camera AFTER
+         * that call would rotate this frame's stick by the game's swinging yaw
+         * while the picture used ours — they'd disagree by up to 120deg (the
+         * measured swing), which is worse than the drift we're fixing.
+         *
+         * We write ONLY at / rot / dist. func_8001994C (decomp src/boot/17930.c:605,
+         * recovered with tools/decomp-func.ps1) derives eye AND up.y from exactly
+         * these every frame, gated on D_8016E134 == 0 — and the probe confirmed
+         * its formula reproduces the live eye exactly. Writing eye ourselves
+         * would just be recomputed away, and "nothing changed" is a far harder
+         * symptom to read than a wrong pose. Let the game finish the job. */
+        arena_cam_stamp();   /* pre-update: the stick rotation reads rot.y */
     }
 
     func_80024744();
+
+    if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        /* Post-update re-assert. The game's camera update runs inside
+         * func_80024744 and reverts our pose (measured: wrote (60,0,0), read
+         * back (20,2,0) next frame). This write is the one the draw sees. */
+        arena_cam_stamp();
+        arena_export_dbg_cam(5, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
+        arena_export_dbg_cam(6, fbits(gView.at.x),  fbits(gView.at.y),  fbits(gView.at.z));
+        /* Player position in HERO coords. Sweeping all four directions (mode 6)
+         * makes the min/max of these the real traversable extent, hence the true
+         * floor centre — measured, not derived from the spawn anchor, which the
+         * capture log shows varies between runs (origin.z was 0 in one boot and
+         * 171 in the next). */
+        arena_export_dbg_cam(7, fbits(gPlayerObject->Pos.x),
+                                fbits(gPlayerObject->Pos.y),
+                                fbits(gPlayerObject->Pos.z));
+        /* A1.2g: the state at the moment of the fall. */
+        arena_export_dbg_cam(8, (s32)gPlayerObject->actionState,
+                                (s32)gPlayerObject->unkA6, 0);
+
+        /* A1.5 FAR CLIP. Tag 9 logs the LEVEL's authored ZFAR, then we raise it.
+         * Measured: MAP_NITROS_1 already authors 8000 and the floor's far corner
+         * is only ~2400 away, so this is NOT the framing problem - see the note
+         * on arena_cam_zfar. Kept as a guard for maps that author a short plane.
+         * Written here, after the update loop, because the decomp declares this
+         * as a union whose bytes[] alias the per-object collision code writes
+         * (69AA0.c:393). */
+        arena_export_dbg_cam(9, fbits(GAME_ZFAR), fbits(arena_export_cam_zfar()), 0);
+        GAME_ZFAR = arena_export_cam_zfar();
+
+        /* A1.2g FLOOR GUARD. The arena's floor polygon is SMALLER than the sim's
+         * collidable bounds, so the sim can walk player 0 off the edge; the
+         * ground query then finds nothing and parks Pos.y at 30000 (measured -
+         * actionState stays 4 throughout, so this is NOT the death path).
+         * Containment until the sim geometry is re-matched to the real floor
+         * (section 8.5a, a sim change). Runs AFTER the position drive below has
+         * had a frame to settle, i.e. it corrects the previous frame's overrun. */
+        if (arena_export_floor_guard(fbits(gPlayerObject->Pos.x),
+                                     fbits(gPlayerObject->Pos.y),
+                                     fbits(gPlayerObject->Pos.z))) {
+            gPlayerObject->Pos.x = arena_export_floor_last_x();
+            gPlayerObject->Pos.y = arena_export_floor_last_y();
+            gPlayerObject->Pos.z = arena_export_floor_last_z();
+        }
+    }
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* A1.2e RESOLVED: the raw pass-through IS camera-relative here — the
@@ -168,7 +338,7 @@ void arena_render_routine(void) {
         if (!arena_export_puppet_ready() && arena_export_draw_gate()) {
             union { f32 f; u32 u; } cx, cy, cz;
             cx.f = gPlayerObject->Pos.x; cy.f = gPlayerObject->Pos.y; cz.f = gPlayerObject->Pos.z;
-            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u);
+            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u, gCurrentLevel);
         }
         if (arena_export_puppet_ready()) {
             gPlayerObject->Pos.x = arena_export_puppet_wx(0);   /* absolute sim pos (no co-drive) */
@@ -201,11 +371,18 @@ void arena_render_routine(void) {
         {
             s32 set_edge = arena_export_set_new(0);
             if (gPlayerObject->Unk140[0] >= 0) {
-                if (set_edge)
+                /* HOLD, not one-shot. Measured 2026-07-27 with the [animw]
+                 * window: the walker (func_80024744, which runs BEFORE this
+                 * block every frame) re-asserts its own anim unconditionally, so
+                 * a single trigger is replaced on the very next frame - with the
+                 * camera on AND off, standing still AND moving. Re-assert while
+                 * the native hold window is open and the walker has taken it. */
+                if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != 29))
                     func_8001C0EC(0, 0, 29, 1, (u32*)D_80115808);
                 /* Auto-verify probe (temporary): burst-log the live anim index +
                  * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
-                arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0));
+                arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0),
+                                      (s32)gPlayerObject->actionState);
             }
         }
 
@@ -411,6 +588,35 @@ void arena_render_routine(void) {
             for (; aj < 4; aj++) {
                 s32 slot = arena_export_blastactor_get_slot(aj);
                 if (slot >= 0) gObjects[slot].actionState = ACTION_NONE;
+            }
+        }
+
+        /* A1.2g FLOOR RASTER (probe mode 7 only; native gates it). Walk a grid
+         * over the arena asking the game's own ground query where the floor is,
+         * so ONE run maps the whole floor. This replaces walking the player into
+         * the edge, which can only ever find one boundary point and then stalls
+         * (the guard parks the player right there).
+         *
+         * Runs LAST in the frame, after func_80024744 and every object update,
+         * because func_80078168 overwrites the shared collision-result globals -
+         * nothing in this frame reads them after this point.
+         *
+         * The per-frame budget is a literal, not a native counter, so the patch
+         * stays stateless. 384/frame covers the default 81x81 survey in ~17
+         * frames and a full 201x201 edge-refinement pass in ~105. */
+        if (arena_export_floor_raster_active()) {
+            s32 n;
+            for (n = 0; n < 384; n++) {
+                if (!arena_export_floor_raster_next()) break;
+                func_80078168(arena_export_floor_raster_px(),
+                              arena_export_floor_raster_py(),
+                              arena_export_floor_raster_pz());
+                {
+                    s32 sel = GQ_SEL;
+                    union { f32 f; s32 i; } h;
+                    h.f = GQ_H[sel];
+                    arena_export_floor_raster_report(sel, h.i);
+                }
             }
         }
     }
