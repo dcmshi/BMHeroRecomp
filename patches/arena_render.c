@@ -94,7 +94,7 @@ extern s32 D_80115808[];                          /* code_extra_0 player anim ta
 extern s32 func_8001B880(s32 objId, s32 part);    /* live anim index (unk14) */
 extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (unk24) */
 DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
-DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log anim idx+frame */
+DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame, s32 state);  /* anim idx+frame+actionState */
 
 /* ---- A1.5 fixed arena camera ------------------------------------------- */
 #include "arena_cam.h"                      /* pose constants; no game types    */
@@ -129,6 +129,8 @@ extern void func_80078168(f32 x, f32 y, f32 z);
 #define GQ_H    ((volatile f32*)0x80177760)
 DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
+DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
+DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
 /* ZFAR, consumed by guPerspective in the in-level draw (decomp 71AA0.c:610) and
  * set per-level from gLevelInfo[level]->unk2C (56800.c:372). Auto-named data
  * symbol -> address literal (section 8.2). The decomp declares it as a union
@@ -154,7 +156,9 @@ static s32 fbits(f32 v) { union { f32 f; s32 i; } u; u.f = v; return u.i; }
  *     entry reads back rot=(20,2,0). The post-write is what the draw actually
  *     sees. */
 static void arena_cam_stamp(void) {
-    f32 ax = arena_export_cam_at_x();
+    f32 ax;
+    if (!arena_export_cam_enabled()) return;   /* ARENA_CAM_OFF=1: runtime A/B */
+    ax = arena_export_cam_at_x();
     f32 ay = arena_export_cam_at_y();
     f32 az = arena_export_cam_at_z();
     /* Distance comes from native so it can be swept with the ARENA_CAM_DIST env
@@ -367,11 +371,18 @@ void arena_render_routine(void) {
         {
             s32 set_edge = arena_export_set_new(0);
             if (gPlayerObject->Unk140[0] >= 0) {
-                if (set_edge)
+                /* HOLD, not one-shot. Measured 2026-07-27 with the [animw]
+                 * window: the walker (func_80024744, which runs BEFORE this
+                 * block every frame) re-asserts its own anim unconditionally, so
+                 * a single trigger is replaced on the very next frame - with the
+                 * camera on AND off, standing still AND moving. Re-assert while
+                 * the native hold window is open and the walker has taken it. */
+                if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != 29))
                     func_8001C0EC(0, 0, 29, 1, (u32*)D_80115808);
                 /* Auto-verify probe (temporary): burst-log the live anim index +
                  * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
-                arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0));
+                arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0),
+                                      (s32)gPlayerObject->actionState);
             }
         }
 

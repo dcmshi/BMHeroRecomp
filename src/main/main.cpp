@@ -98,6 +98,8 @@ extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx
 extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx);      // A1.5 framing distance
 extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx);      // A1.5 far clip
+extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx);   // A1.5 runtime A/B
+extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx);      // A1.4 set-pose hold
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -676,15 +678,22 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 static uint32_t ap = 0;
                 ap++;
                 if (ap > 30 && ap < 520) *y = -1.0f;            /* keep moving (locomotion anims live) */
-                /* STANDING set comes FIRST. The soak dwells ~10s after [capture],
-                 * which never reached the old ap>=360 phase - so the gate only
-                 * ever saw the MOVING sets, where the walker stomps the pose
-                 * (the documented A1.4 limitation) and the frame counter cannot
-                 * advance. The standing set is the case the gate is meant to
-                 * assert, so it must land early and reliably. */
-                if (ap >= 200 && ap < 216) {
+                /* STANDING set. The player must be ACTUALLY STOPPED, not merely
+                 * have had the stick released: the sim needs stop_ticks = 6 to
+                 * come to rest (tools/tune_metrics.baseline), and the game walker
+                 * stomps the set pose on the very next frame if the player is
+                 * still moving (the documented A1.4 limitation, §8.5c).
+                 *
+                 * The old timing released at 200 and set at 204 — FOUR frames,
+                 * inside the 6-tick stop. That made the gate a coin flip on
+                 * whether the player had quite stopped, and it is why this looked
+                 * like an A1.5 camera regression: the [animw] window shows idx 29
+                 * replaced by idx 3 after ONE frame with the camera both ON and
+                 * OFF. Release at 200, set at 215 (15 frames, 2.5x the stop
+                 * time), and keep standing so the pose has room to play out. */
+                if (ap >= 200 && ap < 260) {
                     *y = 0.0f;                                   /* stand still */
-                    if (ap >= 204) *buttons |= 0x2000;           /* then set */
+                    if (ap >= 215 && ap < 223) *buttons |= 0x2000;   /* then set */
                 }
                 if ((ap >= 300 && ap < 308) || (ap >= 360 && ap < 368)) {
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
@@ -976,6 +985,8 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_floor_raster_report);
     REGISTER_FUNC(arena_export_cam_dist);
     REGISTER_FUNC(arena_export_cam_zfar);
+    REGISTER_FUNC(arena_export_cam_enabled);
+    REGISTER_FUNC(arena_export_set_hold);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);

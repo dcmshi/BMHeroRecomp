@@ -179,7 +179,8 @@ extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_set_new(_arg<0, int>(rdram, ctx)));
 }
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx) {
-    arena_dbg_anim(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+    arena_dbg_anim(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                   _arg<2, int>(rdram, ctx));
 }
 
 /* A1.5: camera probe. Four int args - floats travel as BIT PATTERNS because the
@@ -211,6 +212,8 @@ extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context*
 
 extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_dist()); }
 extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_zfar()); }
+extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_enabled()); }
+extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_set_hold()); }
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_x()); }
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }

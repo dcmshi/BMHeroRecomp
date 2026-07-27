@@ -65,6 +65,12 @@ namespace {
     uint8_t g_bomb_prev_state[ARENA_MAX_BOMBS] = {};
     int     g_set_edge[ARENA_MAX_PLAYERS] = { 0, 0, 0, 0 };
 
+    /* Frames since player 0's last set edge, or -1 when no window is open. Drives
+     * the [animw] diagnostic window in arena_dbg_anim. Latched in tick_input
+     * because arena_set_new() consumes the edge before the render patch could
+     * pass it back to us. */
+    int g_anim_since_set = -1;
+
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
     void ensure_init() {
@@ -143,6 +149,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
             int o = g_state.bombs[b].owner;
             if (o >= 0 && o < ARENA_MAX_PLAYERS) g_set_edge[o] = 1;
+            if (o == 0) g_anim_since_set = 0;   /* open the [animw] window */
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
                 std::fprintf(g_log, "[setdbg] t%u bi=%d live=%d simY=%.3f wy=%.2f originY=%.2f slot=%d\n",
                     g_state.tick, b, g_state.players[0].live_bombs,
@@ -439,15 +446,36 @@ extern "C" int arena_set_new(int i) {
  * frames on each index CHANGE, so arena-soak.ps1 can assert idx->29 (the set
  * pose) with the frame counter advancing, without flooding every frame.
  * Temporary probe evidence, mirrors arena_dbg_u32. */
-extern "C" void arena_dbg_anim(int idx, int frame) {
+extern "C" void arena_dbg_anim(int idx, int frame, int state) {
     static int last  = -1;
     static int burst = 0;
     if (idx != last) { last = idx; burst = 8; }
+
+    /* Two logs, deliberately.
+     *
+     * [anim] is the ORIGINAL burst - 8 frames from an index change - and the
+     * A1.4 gate keys off it. Keep its format byte-identical so the gate keeps
+     * meaning the same thing.
+     *
+     * [animw] is a WINDOW: every frame for 40 frames after a set edge, with the
+     * player's actionState. The burst alone cannot diagnose this regression,
+     * because the whole difference between PASS and FAIL is the pose surviving
+     * 3 frames instead of 2 - the burst shows you the symptom and nothing about
+     * the surrounding state. */
     if (burst > 0) {
         burst--;
         std::printf("[anim] idx=%d frame=%d\n", idx, frame);
         std::fflush(stdout);
         if (g_log) { std::fprintf(g_log, "[anim] idx=%d frame=%d\n", idx, frame); std::fflush(g_log); }
+    }
+
+    if (g_anim_since_set >= 0 && g_anim_since_set < 40) {
+        if (g_log) {
+            std::fprintf(g_log, "[animw] +%02d idx=%d frame=%d state=%d\n",
+                         g_anim_since_set, idx, frame, state);
+            std::fflush(g_log);
+        }
+        g_anim_since_set++;
     }
 }
 
@@ -500,6 +528,27 @@ extern "C" float arena_cam_at_dz(void) { static const float v = cam_env("ARENA_C
  * probe tag that logs the level's value is worth having. 8000 matches the game's
  * own usage elsewhere (4DFF0.c: near 10, far 8000), so the near/far ratio stays
  * within precedent for the N64's 16-bit depth. */
+/* Runtime A/B switch for the fixed camera (ARENA_CAM_OFF=1 disables the stamp).
+ * The A1.4 anim regression is isolated by toggling this, and rebuilding the patch
+ * for each side of an A/B is both slow and risky - a failed rebuild silently
+ * leaves the previous exe and the probe then measures the wrong binary. */
+/* 1 while the set pose should be HELD (a window after player 0's set edge).
+ * The one-shot trigger cannot survive: the game walker re-asserts its own anim
+ * EVERY frame, so the pose is replaced on the very next frame - measured, with
+ * the camera both on and off, standing still and moving. Holding means
+ * re-triggering whenever the walker has taken the anim away. */
+extern "C" int arena_set_hold(void) {
+    return (g_anim_since_set >= 0 && g_anim_since_set < 24) ? 1 : 0;
+}
+
+extern "C" int arena_cam_enabled(void) {
+    static const int on = []() {
+        const char* v = std::getenv("ARENA_CAM_OFF");
+        return (v && v[0] == '1') ? 0 : 1;
+    }();
+    return on;
+}
+
 extern "C" float arena_cam_zfar(void) {
     static const float f = []() {
         const char* v = std::getenv("ARENA_CAM_ZFAR");

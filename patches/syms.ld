@@ -112,3 +112,5 @@ arena_export_floor_raster_pz = 0x8F000204;
 arena_export_floor_raster_report = 0x8F000208;
 arena_export_cam_dist = 0x8F00020C;
 arena_export_cam_zfar = 0x8F000210;
+arena_export_cam_enabled = 0x8F000214;
+arena_export_set_hold = 0x8F000218;

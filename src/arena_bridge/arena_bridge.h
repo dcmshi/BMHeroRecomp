@@ -55,7 +55,7 @@ void  arena_blastactor_set_slot(int i, int slot);   /* 4 pooled blast actors */
 int   arena_blastactor_get_slot(int i);
 /* A1.4 set-bomb animation (patch-callable). */
 int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
-void  arena_dbg_anim(int idx, int frame);   /* burst-log live player anim idx+frame */
+void  arena_dbg_anim(int idx, int frame, int state);  /* anim idx+frame+actionState */
 /* A1.5 camera probe. tag: 0=at 1=eye 2=rot 3=up 4=misc(x=gCameraType as a plain
  * int, y=dist bits). Other tags carry three float BIT PATTERNS - the export ABI
  * takes no float arguments. Probe-mode gating and throttling are native-side, so
@@ -81,6 +81,8 @@ float arena_cam_at_y(void);
 float arena_cam_at_z(void);
 float arena_cam_dist(void);   /* ARENA_CAM_DIST, env-overridable for framing */
 float arena_cam_zfar(void);   /* battle-mode far clip; the level's own is too near */
+int   arena_cam_enabled(void);/* 0 when ARENA_CAM_OFF=1 - runtime A/B for the camera */
+int   arena_set_hold(void);   /* 1 while the set pose should be re-asserted */
 #ifdef __cplusplus
 }
 #endif
