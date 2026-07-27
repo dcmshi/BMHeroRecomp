@@ -89,6 +89,9 @@ int   arena_cam_enabled(void);/* 0 when ARENA_CAM_OFF=1 - runtime A/B for the ca
 int   arena_set_hold(void);   /* 1 while the set pose should be re-asserted */
 int   arena_set_anim_index(void);  /* ARENA_SET_ANIM; default 29 */
 int   arena_cam_follow(void);      /* ARENA_CAM_FOLLOW=1: aim at the player */
+float arena_cam_pitch_deg(void);   /* ARENA_CAM_PITCH; trig computed natively */
+float arena_cam_pitch_sin(void);
+float arena_cam_pitch_cos(void);
 int   arena_anim_sweep_index(void);/* ARENA_ANIM_SWEEP=<ticks>; -1 = off */
 #ifdef __cplusplus
 }

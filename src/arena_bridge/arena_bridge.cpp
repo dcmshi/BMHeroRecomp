@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>   /* getenv/atoi - A1.5 camera probe gate */
 #include <cstring>   /* memcpy - float bit patterns across the export ABI */
+#include <cmath>     /* sin/cos for the runtime camera pitch (native only!) */
 
 #include "../../patches/arena_cam.h"   /* A1.5 pose constants (ARENA_CAM_AT_Y_LIFT) */
 
@@ -572,6 +573,37 @@ extern "C" float arena_cam_at_dz(void) { static const float v = cam_env("ARENA_C
  *
  * Yaw is untouched, so the input mapping is unaffected - only the target moves.
  * Inspection only; the fixed target is what ships. */
+/* Camera PITCH, overridable with ARENA_CAM_PITCH (degrees above the ground
+ * plane; 90 = straight down). Default is the shipped ARENA_CAM_PITCH_DEG.
+ *
+ * The trig is computed HERE, natively, which is the whole reason this can be a
+ * runtime knob at all: the patch must never call sinf/cosf, because an emitted
+ * math libcall links silently and jumps to 0 (notes 8.11). That is why the
+ * shipped pose keeps precomputed literals. Native C++ has no such restriction.
+ *
+ * Added for animation inspection - the play pitch of 60 is nearly top-down and
+ * poses are hard to read - but it is equally the knob for future framing work.
+ * Clamped away from the gimbal values the game nudges (90 / 270). */
+extern "C" float arena_cam_pitch_deg(void) {
+    static const float d = []() {
+        const char* v = std::getenv("ARENA_CAM_PITCH");
+        if (v) {
+            float f = (float)std::atof(v);
+            if (f > 1.0f && f < 89.0f) return f;
+        }
+        return (float)ARENA_CAM_PITCH_DEG;
+    }();
+    return d;
+}
+extern "C" float arena_cam_pitch_sin(void) {
+    static const float v = std::sin(arena_cam_pitch_deg() * 3.14159265358979f / 180.0f);
+    return v;
+}
+extern "C" float arena_cam_pitch_cos(void) {
+    static const float v = std::cos(arena_cam_pitch_deg() * 3.14159265358979f / 180.0f);
+    return v;
+}
+
 extern "C" int arena_cam_follow(void) {
     static const int on = []() {
         const char* v = std::getenv("ARENA_CAM_FOLLOW");

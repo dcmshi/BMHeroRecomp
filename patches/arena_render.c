@@ -142,6 +142,9 @@ DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  
 DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
 DECLARE_FUNC(s32,  arena_export_set_anim_index);  /* ARENA_SET_ANIM, default 29 */
 DECLARE_FUNC(s32,  arena_export_anim_sweep_index); /* ARENA_ANIM_SWEEP; -1 = off */
+DECLARE_FUNC(f32,  arena_export_cam_pitch_deg);   /* ARENA_CAM_PITCH; trig native */
+DECLARE_FUNC(f32,  arena_export_cam_pitch_sin);
+DECLARE_FUNC(f32,  arena_export_cam_pitch_cos);
 DECLARE_FUNC(s32,  arena_export_player_hp, s32 i);      /* A1.2g HUD: sim HP     */
 DECLARE_FUNC(s32,  arena_export_player_stocks, s32 i);  /* rounds won            */
 DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*               */
@@ -183,7 +186,10 @@ static void arena_cam_stamp(void) {
     gView.at.x  = ax;
     gView.at.y  = ay;
     gView.at.z  = az;
-    gView.rot.x = ARENA_CAM_PITCH_DEG;   /* pitch; the game's own was 20deg     */
+    /* Pitch from native so it can be swept with ARENA_CAM_PITCH; the trig has to
+     * come with it, because this patch must never emit a sinf/cosf libcall
+     * (notes 8.11). Default is ARENA_CAM_PITCH_DEG, so play is unchanged. */
+    gView.rot.x = arena_export_cam_pitch_deg();
     gView.rot.y = ARENA_CAM_YAW_DEG;     /* the value that MUST stay fixed      */
     gView.rot.z = 0.0f;
     gView.dist  = dist;
@@ -199,9 +205,13 @@ static void arena_cam_stamp(void) {
      *   eye = at + dist * (cos(yaw+90)*cos(pitch), sin(pitch), sin(yaw+90)*cos(pitch))
      * At yaw 0 that is at + (0, dist*sin(pitch), dist*cos(pitch)) — +Z and above,
      * which puts the arena's long axis horizontal. */
-    gView.eye.x = ax + dist * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
-    gView.eye.y = ay + dist * ARENA_CAM_SIN_PITCH;
-    gView.eye.z = az + dist * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
+    {
+        f32 sp = arena_export_cam_pitch_sin();
+        f32 cp = arena_export_cam_pitch_cos();
+        gView.eye.x = ax + dist * ARENA_CAM_COS_YAW_EFF * cp;
+        gView.eye.y = ay + dist * sp;
+        gView.eye.z = az + dist * ARENA_CAM_SIN_YAW_EFF * cp;
+    }
     gView.up.x  = 0.0f;
     gView.up.y  = 1.0f;   /* pitch 60 is < 90, so the game's rule gives +1 */
     gView.up.z  = 0.0f;

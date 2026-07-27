@@ -119,3 +119,6 @@ arena_export_player_stocks = 0x8F000220;
 arena_export_match_phase = 0x8F000224;
 arena_export_set_anim_index = 0x8F000228;
 arena_export_anim_sweep_index = 0x8F00022C;
+arena_export_cam_pitch_deg = 0x8F000230;
+arena_export_cam_pitch_sin = 0x8F000234;
+arena_export_cam_pitch_cos = 0x8F000238;
