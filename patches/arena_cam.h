@@ -31,8 +31,11 @@
  * probe (ARENA_AUTO_BATTLE=6) establishes the starting value and it is then
  * iterated by screenshot. The arena is 1896 x 928 Hero units
  * (2 * half_x/half_z * g_scale 120). */
-#define ARENA_CAM_DIST      1600.0f
-#define ARENA_CAM_AT_Y_LIFT   60.0f   /* aim slightly above the floor, not at it */
+#define ARENA_CAM_DIST      2200.0f
+/* The game's own rail camera aims at y=340 with origin_y=240, i.e. 100 above the
+ * floor anchor (measured, ARENA_AUTO_BATTLE=6). Matching that keeps the horizon
+ * where the room was authored for. */
+#define ARENA_CAM_AT_Y_LIFT  100.0f
 
 /* ---------------------------------------------------------------------------
  * THE GAME DERIVES eye AND up ITSELF - we must NOT write them.

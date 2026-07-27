@@ -103,12 +103,55 @@ DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log an
  * counter aborts 0xC0000409). Floats cross as BIT PATTERNS - the export ABI
  * takes no float arguments (notes 8.2). */
 DECLARE_FUNC(void, arena_export_dbg_cam, s32 tag, s32 x, s32 y, s32 z);
-DECLARE_FUNC(f32,  arena_cam_at_x);         /* arena centre, Hero world coords  */
-DECLARE_FUNC(f32,  arena_cam_at_y);
-DECLARE_FUNC(f32,  arena_cam_at_z);
+DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
+DECLARE_FUNC(f32,  arena_export_cam_at_y);
+DECLARE_FUNC(f32,  arena_export_cam_at_z);
 
 /* Bit-cast a float into an int arg for the export ABI. */
 static s32 fbits(f32 v) { union { f32 f; s32 i; } u; u.f = v; return u.i; }
+
+/* Stamp the fixed arena pose onto gView. Writes ONLY at/rot/dist: func_8001994C
+ * (decomp src/boot/17930.c:605) derives eye and up.y from exactly these, and the
+ * probe confirmed its formula reproduces the live eye to 2dp.
+ *
+ * Called TWICE per frame, and both are load-bearing:
+ *   - BEFORE func_80024744, because that routine rotates gActiveContStickX/Y in
+ *     place by gView.rot.y — the stick must see our stable yaw, not the rail's.
+ *   - AFTER it, because the game's own camera update runs INSIDE that call and
+ *     reverts everything. Measured: we write rot=(60,0,0), and the next frame's
+ *     entry reads back rot=(20,2,0). The post-write is what the draw actually
+ *     sees. */
+static void arena_cam_stamp(void) {
+    f32 ax = arena_export_cam_at_x();
+    f32 ay = arena_export_cam_at_y();
+    f32 az = arena_export_cam_at_z();
+
+    gView.at.x  = ax;
+    gView.at.y  = ay;
+    gView.at.z  = az;
+    gView.rot.x = ARENA_CAM_PITCH_DEG;   /* pitch; the game's own was 20deg     */
+    gView.rot.y = ARENA_CAM_YAW_DEG;     /* the value that MUST stay fixed      */
+    gView.rot.z = 0.0f;
+    gView.dist  = ARENA_CAM_DIST;
+
+    /* eye/up written EXPLICITLY. func_8001994C would derive them from the above
+     * (decomp src/boot/17930.c:605), but it is gated on D_8016E134 == 0 and that
+     * gate is evidently closed here: with only at/rot/dist written, the picture
+     * was PIXEL-IDENTICAL across a 2x change of ARENA_CAM_DIST, and the logged
+     * eye never moved off the rail camera's last value. So we finish the job
+     * ourselves, using the game's own formula (guLookAt consumes eye/at/up).
+     *
+     * Same trig as the header's model, inlined here with no runtime calls:
+     *   eye = at + dist * (cos(yaw+90)*cos(pitch), sin(pitch), sin(yaw+90)*cos(pitch))
+     * At yaw 0 that is at + (0, dist*sin(pitch), dist*cos(pitch)) — +Z and above,
+     * which puts the arena's long axis horizontal. */
+    gView.eye.x = ax + ARENA_CAM_DIST * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.eye.y = ay + ARENA_CAM_DIST * ARENA_CAM_SIN_PITCH;
+    gView.eye.z = az + ARENA_CAM_DIST * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.up.x  = 0.0f;
+    gView.up.y  = 1.0f;   /* pitch 60 is < 90, so the game's rule gives +1 */
+    gView.up.z  = 0.0f;
+}
 
 extern void func_80024744(void);            /* original per-frame routine 2 (update) */
 extern void func_800821E0(void);            /* original per-frame routine 1 (draw)   */
@@ -156,9 +199,35 @@ void arena_render_routine(void) {
         arena_export_dbg_cam(2, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
         arena_export_dbg_cam(3, fbits(gView.up.x),  fbits(gView.up.y),  fbits(gView.up.z));
         arena_export_dbg_cam(4, (s32)gCameraType,   fbits(gView.dist),  0);
+
+        /* A1.5 FIXED CAMERA. Re-asserted EVERY frame (the established idiom —
+         * the boss re-activates if its sweep stops, notes 8.13).
+         *
+         * ORDERING IS LOAD-BEARING: func_80024744 (called just below) rotates
+         * gActiveContStickX/Y in place by gView.rot.y. Writing the camera AFTER
+         * that call would rotate this frame's stick by the game's swinging yaw
+         * while the picture used ours — they'd disagree by up to 120deg (the
+         * measured swing), which is worse than the drift we're fixing.
+         *
+         * We write ONLY at / rot / dist. func_8001994C (decomp src/boot/17930.c:605,
+         * recovered with tools/decomp-func.ps1) derives eye AND up.y from exactly
+         * these every frame, gated on D_8016E134 == 0 — and the probe confirmed
+         * its formula reproduces the live eye exactly. Writing eye ourselves
+         * would just be recomputed away, and "nothing changed" is a far harder
+         * symptom to read than a wrong pose. Let the game finish the job. */
+        arena_cam_stamp();   /* pre-update: the stick rotation reads rot.y */
     }
 
     func_80024744();
+
+    if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        /* Post-update re-assert. The game's camera update runs inside
+         * func_80024744 and reverts our pose (measured: wrote (60,0,0), read
+         * back (20,2,0) next frame). This write is the one the draw sees. */
+        arena_cam_stamp();
+        arena_export_dbg_cam(5, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
+        arena_export_dbg_cam(6, fbits(gView.at.x),  fbits(gView.at.y),  fbits(gView.at.z));
+    }
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
         /* A1.2e RESOLVED: the raw pass-through IS camera-relative here — the
