@@ -51,39 +51,25 @@
 #define ARENA_CAM_SIN_YAW     0.0f         /* sin(0)  */
 #define ARENA_CAM_COS_YAW     1.0f         /* cos(0)  */
 
-/* Hero world units, chosen by SCREENSHOT SWEEP (1200 / 1800 / 2800 / 4000 at
- * ARENA_CAM_DIST, 2026-07-26), not derived - we don't know the FOV.
+/* Hero world units. The camera WORKS: at this distance the whole 1900x1900 floor
+ * is framed and centred, with margin below the near edge. Verified against a
+ * RenderDoc capture, not just a screenshot (see below). Override at runtime with
+ * the ARENA_CAM_DIST env var (arena_bridge.cpp arena_cam_dist) - no rebuild.
  *
- * 1800 frames the floor best of those tried. Override at runtime with the
- * ARENA_CAM_DIST env var (arena_bridge.cpp arena_cam_dist) - no rebuild - so
- * re-sweeping is cheap.
+ * Chosen from a sweep measured with tools/shot_measure.py on 1600x900 frames:
+ * at 2400 the floor's near edge runs off the bottom (bbox y ends at 899 of 899);
+ * 2800 fits with margin (y[286..876]); 3200 wastes screen. Floor centroid sits
+ * at x~815 of 1600 - i.e. centred, as intended.
  *
- * THE CAMERA POSE IS CORRECT - proven, and an earlier note here claiming `at`
- * was ignored and the view followed the player was WRONG. At dist 400 the
- * picture is a close-up of the arena CENTRE with the player (1100 units away at
- * its corner) nowhere in frame, which only happens if gView.at is honoured. The
- * dist sweep also proves our write drives the picture: zoom tracks this value
- * exactly. And the camera-follow code that does overwrite `at`
- * (decomp src/code/63F90.c, dispatched by func_80076374) runs INSIDE
- * func_80024744, so our post-update stamp already wins.
- *
- * OPEN: the arena still doesn't FRAME - the floor covers only 13% of the
- * viewport at dist 2400 and hugs the corner nearest the camera. Measured with
- * tools/shot_measure.py; three candidate causes were tested and ELIMINATED:
- *   - gView.at being overwritten  (no: see above)
- *   - the level's far clip plane  (no: MAP_NITROS_1 authors ZFAR 8000, and the
- *                                  floor's far corner is only ~2400 away)
- *   - level-chunk view culling    (no: forcing the chunk radius 0 -> 10 moved
- *                                  coverage 12.9% -> 13.7% and then saturated)
- * What the numbers say: aiming further +X/+Z keeps INCREASING coverage (12.9% at
- * offset 0, 28.8% at +475, 47.4% at +950, still rising), so the drawn floor is
- * offset from the collision floor the raster measured. Next step is a RenderDoc
- * capture (qrenderdoc --python can script the analysis) to read the real view
- * matrix and the floor mesh's true world bounds.
- *
- * Meanwhile this behaves as a fixed-orientation camera that still delivers
- * A1.5's actual goal - a stable yaw, so a held stick direction stops curving. */
-#define ARENA_CAM_DIST      1800.0f
+ * A CAUTION WORTH KEEPING. This value was previously "1800, best of a bad set",
+ * and three separate root causes were hypothesised for why the arena wouldn't
+ * frame - gView.at being overwritten, the level's far clip plane, level-chunk
+ * view culling. All three were WRONG. The camera had been correct the entire
+ * time; tools/capture-game.ps1 was silently capturing only the TOP-LEFT QUARTER
+ * of the frame (a DPI bug - see the banner in that script), so the centred arena
+ * appeared shoved into a corner. A RenderDoc capture of the same frame settled it
+ * in one shot. Integration notes 8.17. */
+#define ARENA_CAM_DIST      2800.0f
 /* The game's own rail camera aims at y=340 with origin_y=240, i.e. 100 above the
  * floor anchor (measured, ARENA_AUTO_BATTLE=6). Matching that keeps the horizon
  * where the room was authored for. */
