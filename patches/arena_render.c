@@ -316,7 +316,25 @@ void arena_render_routine(void) {
          * the Nitros warp (Battle Room may differ — re-check if the map ever
          * changes: log gCameraType, must be in the rotation set). */
         s32 sx = (s32)(gActiveContStickX * (31.0f / 80.0f));
-        s32 sy = (s32)(gActiveContStickY * (31.0f / 80.0f));
+        /* NEGATED: the two sides disagree on which way is "up" on the Y axis.
+         *
+         * The recomp maps W to GameInput::Y_AXIS_POS and computes
+         * cur_y += Y_AXIS_POS - Y_AXIS_NEG (recompinput profiles.cpp:397), so W
+         * arrives POSITIVE. The sim wants forward NEGATIVE - its own probe
+         * harness says so outright: "sy MUST be -31, not +31: iatan2(Q(0),
+         * Q(-31)) resolves to 0x0000" (tune_probes.c) - because yaw 0 means -Z
+         * and the sim moves along (sin yaw, -cos yaw).
+         *
+         * Without this, W drove the player toward +Z, which the fixed camera
+         * (eye at +Z; RenderDoc-confirmed depth = 2486.6 - 0.5z, so +Z is nearer
+         * the camera) renders as moving DOWN the screen. That is the "W and S
+         * are reversed" from the 2026-07-27 feel test, reproduced and measured
+         * with probe mode 8.
+         *
+         * The negation belongs HERE, in the adapter: the sim's convention is
+         * canonical, documented, covered by tests and folded into the pinned
+         * hash. Bending the sim to suit one front end would be backwards. */
+        s32 sy = -(s32)(gActiveContStickY * (31.0f / 80.0f));
         if (sx >  31) sx =  31;
         if (sx < -31) sx = -31;
         if (sy >  31) sy =  31;
@@ -359,6 +377,12 @@ void arena_render_routine(void) {
          * authentic by construction. We still drive POSITION from the sim
          * (dx/dz); only facing borrows the game's value. */
         gPlayerObject->Rot.y = gPlayerObject->moveAngle;
+        /* Facing vs travel check (probe modes 6/8). We copy the GAME's moveAngle,
+         * which the walker computes from the RAW stick - but the sim is now fed a
+         * NEGATED stick Y, so the two can disagree about which way the player is
+         * pointing. Log both and compare rather than assume. */
+        arena_export_dbg_cam(10, fbits(gPlayerObject->moveAngle),
+                                 fbits(arena_export_player_yaw(0)), 0);
 
         /* A1.4: set-bomb animation for player 0. The sim tick above (line ~139)
          * latched a set edge if player 0 placed a bomb this frame (bomb

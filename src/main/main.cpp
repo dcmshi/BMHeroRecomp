@@ -637,7 +637,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7' || v[0] == '8');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster 8=direction */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -699,6 +699,28 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
             }
+            if (mode && mode[0] == '8') {
+                /* DIRECTION probe. Holds ONE stick axis for a long stretch so the
+                 * on-screen direction of travel is unambiguous: screenshot early
+                 * and late, and shot_measure.py's find_player gives the pixel
+                 * delta. ARENA_PROBE_AXIS picks the axis: "w" (default) = stick
+                 * up, "s" = down, "a"/"d" = left/right.
+                 *
+                 * Exists because reasoning through stick -> sim -> Hero -> camera
+                 * says W moves UP the screen while the feel test says the
+                 * opposite, and that chain has too many sign conventions to
+                 * settle by argument (2026-07-27). */
+                static const char* ax = std::getenv("ARENA_PROBE_AXIS");
+                static uint32_t dp = 0;
+                dp++;
+                if (dp > 120) {
+                    char a = (ax && ax[0]) ? ax[0] : 'w';
+                    if      (a == 'w') *y =  1.0f;
+                    else if (a == 's') *y = -1.0f;
+                    else if (a == 'a') *x = -1.0f;
+                    else if (a == 'd') *x =  1.0f;
+                }
+            }
             if (mode && mode[0] == '6') {
                 /* A1.5 camera probe: sweep all four directions so the [cam] ppos
                  * samples span the arena. The min/max of those give the REAL
@@ -736,7 +758,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7' || soak[0] == '8') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;

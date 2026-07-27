@@ -165,8 +165,20 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     static uint32_t n = 0;
     if ((++n % 60u) == 0u && g_log) {
         std::fprintf(g_log,
-            "[simpos] t%u p0(%.2f,%.2f) p1(%.2f,%.2f) p2(%.2f,%.2f) p3(%.2f,%.2f)\n",
+            /* phase/shrink/alive/state make a "the player got stuck" report
+             * self-diagnosing: PHASE_ROUND_END freezes movement outright, sudden
+             * death creeps the walls in, and a dead player simply stops. Without
+             * these the log shows a position that stops changing and nothing
+             * about why. */
+            "[simpos] t%u ph=%d shr=%d alive=%d st0=%d p0(%.2f,%.2f) p1(%.2f,%.2f) "
+            "p2(%.2f,%.2f) p3(%.2f,%.2f)\n",
             g_state.tick,
+            (int)g_state.phase, (int)g_state.shrink_step,
+            (int)((g_state.players[0].state != PSTATE_DEAD) +
+                  (g_state.players[1].state != PSTATE_DEAD) +
+                  (g_state.players[2].state != PSTATE_DEAD) +
+                  (g_state.players[3].state != PSTATE_DEAD)),
+            (int)g_state.players[0].state,
             qf(g_state.players[0].pos.x), qf(g_state.players[0].pos.z),
             qf(g_state.players[1].pos.x), qf(g_state.players[1].pos.z),
             qf(g_state.players[2].pos.x), qf(g_state.players[2].pos.z),
@@ -781,9 +793,11 @@ extern "C" void arena_floor_raster_report(int sel, int hbits) {
  * Floats arrive as BIT PATTERNS - the export ABI takes no float arguments. */
 extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
-    static const bool  armed = (mode != nullptr && std::atoi(mode) == 6);
+    /* mode 8 (direction probe) reuses this logger for the facing check. */
+    static const bool  armed = (mode != nullptr &&
+                                (std::atoi(mode) == 6 || std::atoi(mode) == 8));
     if (!armed) return;
-    if (tag < 0 || tag > 9) return;
+    if (tag < 0 || tag > 10) return;
 
     /* A1.2g floor-extent tracker. Runs EVERY frame, BEFORE the log throttle -
      * a 30-frame sample is far too coarse to locate a floor edge.
@@ -838,6 +852,17 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     } else if (tag == 9) {
         /* x = the LEVEL's authored ZFAR, sampled BEFORE our write; y = ours. */
         std::snprintf(line, sizeof line, "[cam] zfar level=%.1f -> ours=%.1f\n",
+                      (double)x, (double)y);
+    } else if (tag == 10) {
+        /* Facing check. x = the game's moveAngle (what we copy into Rot.y),
+         * y = the SIM's yaw in degrees (what actually determines travel).
+         * For W the sim yaw is 0 (-Z), and the game's convention is
+         * direction = (sin th, cos th), so facing -Z needs moveAngle 180.
+         * Anything else means the model points somewhere other than where it
+         * is actually going - which matters now that the bridge negates the
+         * stick's Y for the sim but the game computes moveAngle from the raw
+         * stick. */
+        std::snprintf(line, sizeof line, "[cam] face moveAngle=%.1f simYaw=%.1f\n",
                       (double)x, (double)y);
     } else {
         /* tags 5/6 are the SAME fields sampled immediately AFTER our write, so a
