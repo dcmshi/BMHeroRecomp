@@ -217,6 +217,7 @@ extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx) { 
 extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_set_hold()); }
 extern "C" void arena_export_set_anim_index(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_set_anim_index()); }
 extern "C" void arena_export_anim_sweep_index(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_anim_sweep_index()); }
+extern "C" void arena_export_pose_anim(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_pose_anim()); }
 extern "C" void arena_export_cam_pitch_deg(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_pitch_deg()); }
 extern "C" void arena_export_cam_pitch_sin(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_pitch_sin()); }
 extern "C" void arena_export_cam_pitch_cos(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_pitch_cos()); }

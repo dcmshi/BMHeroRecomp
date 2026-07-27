@@ -12,7 +12,7 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 # injection for the camera forensics); dwells after PASS so the injected
 # samples land in the log before the kill.
 # -AnimProbe: single run in ARENA_AUTO_BATTLE=4 (A1.4) — runs + presses Z (set)
-# in-level; asserts the render patch logged [anim] idx=29 (the set-bomb pose)
+# in-level; asserts the render patch logged [anim] idx=41 (the set-bomb pose)
 # with the frame counter advancing. This is the A1.4 objective gate.
 #
 # GENERIC GATES (so a new objective probe needs only its ARENA_AUTO_BATTLE mode
@@ -35,9 +35,9 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 #                     -AnimProbe).
 #
 # -AnimProbe asserts the set pose is STILL SHOWING 12 frames after the set edge:
-#   -Mode 4 -Expect '\[animw\] \+12 idx=29'
+#   -Mode 4 -Expect '\[animw\] \+12 idx=41'
 #
-# It used to be -Rising 'idx=29 frame=(\d+)' — "the anim frame counter advanced".
+# It used to be -Rising 'idx=<set> frame=(\d+)' — "the anim frame counter advanced".
 # That was the WRONG PROXY and it cost a wrong bug report (a supposed A1.5 camera
 # regression). Measured 2026-07-27: the game walker re-asserts its own anim EVERY
 # frame, and our trigger runs after it, so we can hold the pose only by
@@ -50,7 +50,7 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 # implementation can honestly deliver. Real ANIMATION (a counter that advances)
 # needs the game's own set state engaged so the walker plays it itself — that is
 # still open; see integration notes §8.18.
-if ($AnimProbe -and -not $Expect -and -not $Rising) { $Expect = '\[animw\] \+12 idx=29' }
+if ($AnimProbe -and -not $Expect -and -not $Rising) { $Expect = '\[animw\] \+12 idx=41' }
 if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
 if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
 if ($Mode -eq 0) { $Mode = 1 }
@@ -122,7 +122,7 @@ if ($Absent) {
 if ($Rising) {
     # The pattern's first capture group must appear >=2 times and strictly
     # increase — proves the thing kept advancing rather than firing once.
-    # (For -AnimProbe this is the A1.4 gate: idx=29 can come from our sim-edge
+    # (For -AnimProbe this is the A1.4 gate: the set index can come from our sim-edge
     # trigger or the game's own walker on the Z press; either proves the
     # animation path works.)
     $vals = @()

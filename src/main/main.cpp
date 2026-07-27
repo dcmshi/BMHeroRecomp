@@ -104,6 +104,7 @@ extern "C" void arena_export_player_hp(uint8_t* rdram, recomp_context* ctx);    
 extern "C" void arena_export_player_stocks(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_match_phase(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_anim_index(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_pose_anim(uint8_t* rdram, recomp_context* ctx);   // set OR kick pose to hold
 extern "C" void arena_export_anim_sweep_index(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_pitch_deg(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_pitch_sin(uint8_t* rdram, recomp_context* ctx);
@@ -707,6 +708,30 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
             }
+            if (mode && std::atoi(mode) == 10) {
+                /* KICK probe. Set a bomb, walk clear of it, then walk back into
+                 * it — the sim's walk-in kick (the setter is immune until they
+                 * step clear, so the round trip is required, not decoration).
+                 * Gates the kick pose the same way mode 4 gates the set pose.
+                 *
+                 * Needed because the kick animation was found by EYE on the
+                 * contact sheet (32/33) — §8.5c had concluded no kick animation
+                 * existed — so an on-screen assertion is the only evidence that
+                 * the edge fires at all.
+                 *
+                 * Two timing constraints, both measured rather than assumed:
+                 * the poll counter runs ~45 AHEAD of the sim tick, so a set at
+                 * kp 215 lands at tick ~175 and is dropped by the 180-tick
+                 * countdown (the first attempt did exactly that — [earlybtn]
+                 * t175..178); and TUNE_FUSE_TICKS is 150, so the whole round
+                 * trip has to finish before the bomb detonates under us. */
+                static uint32_t kp = 0;
+                kp++;
+                if      (kp > 30  && kp < 245) *y =  0.0f;       /* wait out the countdown */
+                else if (kp >= 250 && kp < 262) *buttons |= 0x2000;   /* set (~tick 210) */
+                else if (kp >= 270 && kp < 312) *y = -1.0f;      /* walk clear (drops setter grace) */
+                else if (kp >= 315 && kp < 460) *y =  1.0f;      /* walk back in -> kick */
+            }
             if (mode && mode[0] == '9') {
                 /* TURN probe: run, STOP COMPLETELY, then run the opposite way.
                  * Measures what the GAME'S OWN walker does to moveAngle on a
@@ -1034,6 +1059,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_player_stocks);
     REGISTER_FUNC(arena_export_match_phase);
     REGISTER_FUNC(arena_export_set_anim_index);
+    REGISTER_FUNC(arena_export_pose_anim);
     REGISTER_FUNC(arena_export_anim_sweep_index);
     REGISTER_FUNC(arena_export_cam_pitch_deg);
     REGISTER_FUNC(arena_export_cam_pitch_sin);

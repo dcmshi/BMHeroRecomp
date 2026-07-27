@@ -122,3 +122,4 @@ arena_export_anim_sweep_index = 0x8F00022C;
 arena_export_cam_pitch_deg = 0x8F000230;
 arena_export_cam_pitch_sin = 0x8F000234;
 arena_export_cam_pitch_cos = 0x8F000238;
+arena_export_pose_anim = 0x8F00023C;

@@ -87,7 +87,12 @@ float arena_cam_dist(void);   /* ARENA_CAM_DIST, env-overridable for framing */
 float arena_cam_zfar(void);   /* battle-mode far clip; the level's own is too near */
 int   arena_cam_enabled(void);/* 0 when ARENA_CAM_OFF=1 - runtime A/B for the camera */
 int   arena_set_hold(void);   /* 1 while the set pose should be re-asserted */
-int   arena_set_anim_index(void);  /* ARENA_SET_ANIM; default 29 */
+int   arena_set_anim_index(void);  /* ARENA_SET_ANIM; default 41 */
+int   arena_kick_anim_index(void); /* ARENA_KICK_ANIM; default 32 */
+/* The action pose to re-assert this frame, or -1. Covers set AND kick; the
+ * patch needs no edge of its own, because a one-shot trigger only survives a
+ * frame against the walker (§8.18). */
+int   arena_pose_anim(void);
 int   arena_cam_follow(void);      /* ARENA_CAM_FOLLOW=1: aim at the player */
 float arena_cam_pitch_deg(void);   /* ARENA_CAM_PITCH; trig computed natively */
 float arena_cam_pitch_sin(void);

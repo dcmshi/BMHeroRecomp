@@ -140,7 +140,8 @@ DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
 DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
-DECLARE_FUNC(s32,  arena_export_set_anim_index);  /* ARENA_SET_ANIM, default 29 */
+DECLARE_FUNC(s32,  arena_export_set_anim_index);  /* ARENA_SET_ANIM, default 41 */
+DECLARE_FUNC(s32,  arena_export_pose_anim);  /* set OR kick pose to hold, -1 = none */
 DECLARE_FUNC(s32,  arena_export_anim_sweep_index); /* ARENA_ANIM_SWEEP; -1 = off */
 DECLARE_FUNC(f32,  arena_export_cam_pitch_deg);   /* ARENA_CAM_PITCH; trig native */
 DECLARE_FUNC(f32,  arena_export_cam_pitch_sin);
@@ -513,16 +514,16 @@ void arena_render_routine(void) {
                                  fbits(arena_export_player_yaw(0)),
                                  (s32)gPlayerObject->actionState);
 
-        /* A1.4: set-bomb animation for player 0. The sim tick above (line ~139)
-         * latched a set edge if player 0 placed a bomb this frame (bomb
-         * FREE->SETTLED). Overlay the game's own set/drop pose (anim 29) on
-         * gPlayerObject once per event; the walker (func_80024744, above) returns
-         * to locomotion on its next state change, so we don't re-trigger. Always
-         * read-and-clear the edge (no accumulation); only trigger/read-back once
-         * the player's model-anim record is bound (Unk140[0] >= 0 — a negative
-         * slot would host-AV in func_8001C0EC / the getters during level-enter). */
+        /* A1.4: ACTION animations for player 0. The sim tick above (line ~139)
+         * latched a pose if player 0 set a bomb (bomb FREE->SETTLED) or kicked one
+         * (SETTLED->SLIDING with player 0 stamped as the kicker). The bridge hands
+         * back a single index to hold, so the patch needs no edge of its own.
+         *
+         * Only trigger/read-back once the player's model-anim record is bound
+         * (Unk140[0] >= 0 — a negative slot would host-AV in func_8001C0EC / the
+         * getters during level-enter). */
         {
-            s32 set_edge = arena_export_set_new(0);
+            arena_export_set_new(0);        /* drain: the bridge owns the edge now */
             if (gPlayerObject->Unk140[0] >= 0) {
                 /* HOLD, not one-shot. Measured 2026-07-27 with the [animw]
                  * window: the walker (func_80024744, which runs BEFORE this
@@ -538,9 +539,11 @@ void arena_render_routine(void) {
                     if (func_8001B880(0, 0) != sweep)
                         func_8001C0EC(0, 0, sweep, 1, (u32*)D_80115808);
                 } else {
-                    s32 set_anim = arena_export_set_anim_index();   /* ARENA_SET_ANIM */
-                    if (set_edge || (arena_export_set_hold() && func_8001B880(0, 0) != set_anim))
-                        func_8001C0EC(0, 0, set_anim, 1, (u32*)D_80115808);
+                    /* -1 = no action pose open; otherwise re-assert whenever the
+                     * walker has taken the anim back. */
+                    s32 pose = arena_export_pose_anim();
+                    if (pose >= 0 && func_8001B880(0, 0) != pose)
+                        func_8001C0EC(0, 0, pose, 1, (u32*)D_80115808);
                 }
                 /* Auto-verify probe (temporary): burst-log the live anim index +
                  * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */

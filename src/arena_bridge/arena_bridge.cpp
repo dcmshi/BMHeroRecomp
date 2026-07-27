@@ -72,6 +72,13 @@ namespace {
      * pass it back to us. */
     int g_anim_since_set = -1;
 
+    /* ACTION POSE window. One mechanism for both set and kick: an action latches
+     * the index to play and a frame budget, and the patch re-asserts it while the
+     * budget lasts (the walker re-asserts its own anim every frame, so a
+     * one-shot trigger survives exactly one frame - §8.18). */
+    int g_pose_anim   = -1;
+    int g_pose_frames = 0;
+
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
     void ensure_init() {
@@ -150,12 +157,34 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
             int o = g_state.bombs[b].owner;
             if (o >= 0 && o < ARENA_MAX_PLAYERS) g_set_edge[o] = 1;
-            if (o == 0) g_anim_since_set = 0;   /* open the [animw] window */
+            if (o == 0) {
+                g_anim_since_set = 0;           /* open the [animw] window */
+                g_pose_anim   = arena_set_anim_index();
+                g_pose_frames = 24;
+            }
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
                 std::fprintf(g_log, "[setdbg] t%u bi=%d live=%d simY=%.3f wy=%.2f originY=%.2f slot=%d\n",
                     g_state.tick, b, g_state.players[0].live_bombs,
                     qf(g_state.bombs[b].pos.y), arena_bomb_wy(b), g_origin_y, g_bomb_slot[b]);
                 std::fflush(g_log);
+            }
+        }
+        /* KICK edge: SETTLED -> SLIDING. The sim stamps the kicker into `bounced`
+         * as idx+1 (arena_sim.c, walk-in kick), so the actor is known without
+         * any new sim state. Pure read - no gameplay change, hash untouched.
+         *
+         * §8.5c called a kick animation non-existent ("Bomberman Hero offense is
+         * grab->throw"), and that was wrong: the 2026-07-27 animation contact
+         * sheet shows clear kick poses at indices 32/33. */
+        if (g_bomb_prev_state[b] == BSTATE_SETTLED && now == BSTATE_SLIDING) {
+            int kicker = (int)g_state.bombs[b].bounced - 1;
+            if (kicker == 0) {
+                g_pose_anim   = arena_kick_anim_index();
+                g_pose_frames = 24;
+                if (g_log) {
+                    std::fprintf(g_log, "[kick] pose idx=%d bomb=%d\n", g_pose_anim, b);
+                    std::fflush(g_log);
+                }
             }
         }
         g_bomb_prev_state[b] = now;
@@ -482,6 +511,8 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
         if (g_log) { std::fprintf(g_log, "[anim] idx=%d frame=%d\n", idx, frame); std::fflush(g_log); }
     }
 
+    if (g_pose_frames > 0) g_pose_frames--;
+
     if (g_anim_since_set >= 0 && g_anim_since_set < 40) {
         if (g_log) {
             std::fprintf(g_log, "[animw] +%02d idx=%d frame=%d state=%d\n",
@@ -644,7 +675,25 @@ extern "C" int arena_set_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_SET_ANIM");
         if (v) { int n = std::atoi(v); if (n >= 0 && n < 64) return n; }
-        return 29;
+        return 41;
+    }();
+    return idx;
+}
+
+/* The pose the patch should be holding, or -1. Ticked down in arena_dbg_anim,
+ * which the patch calls once per frame. */
+extern "C" int arena_pose_anim(void) {
+    return (g_pose_frames > 0) ? g_pose_anim : -1;
+}
+
+/* Kick pose index; ARENA_KICK_ANIM overrides. 32 comes from the contact sheet,
+ * confirmed by eye - there is no decomp source for it, because the decomp pass
+ * concluded no kick animation existed at all. */
+extern "C" int arena_kick_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_KICK_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= 0 && n < 64) return n; }
+        return 32;
     }();
     return idx;
 }
