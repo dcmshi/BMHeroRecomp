@@ -191,6 +191,14 @@ extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx) {
 
 /* A1.5: arena centre for gView.at. f32 RETURNS are fine over the ABI (only float
  * ARGUMENTS are not). */
-extern "C" void arena_cam_at_x_export(uint8_t* rdram, recomp_context* ctx) { _return(ctx, arena_cam_at_x()); }
-extern "C" void arena_cam_at_y_export(uint8_t* rdram, recomp_context* ctx) { _return(ctx, arena_cam_at_y()); }
-extern "C" void arena_cam_at_z_export(uint8_t* rdram, recomp_context* ctx) { _return(ctx, arena_cam_at_z()); }
+extern "C" void arena_export_floor_guard(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_floor_guard(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                                   _arg<2, int>(rdram, ctx)));
+}
+extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_last_x()); }
+extern "C" void arena_export_floor_last_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_last_y()); }
+extern "C" void arena_export_floor_last_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_last_z()); }
+
+extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_x()); }
+extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
+extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }

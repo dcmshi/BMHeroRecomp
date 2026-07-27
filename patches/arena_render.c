@@ -103,6 +103,10 @@ DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame);   /* burst-log an
  * counter aborts 0xC0000409). Floats cross as BIT PATTERNS - the export ABI
  * takes no float arguments (notes 8.2). */
 DECLARE_FUNC(void, arena_export_dbg_cam, s32 tag, s32 x, s32 y, s32 z);
+DECLARE_FUNC(s32,  arena_export_floor_guard, s32 x, s32 y, s32 z);  /* A1.2g */
+DECLARE_FUNC(f32,  arena_export_floor_last_x);
+DECLARE_FUNC(f32,  arena_export_floor_last_y);
+DECLARE_FUNC(f32,  arena_export_floor_last_z);
 DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
 DECLARE_FUNC(f32,  arena_export_cam_at_y);
 DECLARE_FUNC(f32,  arena_export_cam_at_z);
@@ -235,6 +239,24 @@ void arena_render_routine(void) {
         arena_export_dbg_cam(7, fbits(gPlayerObject->Pos.x),
                                 fbits(gPlayerObject->Pos.y),
                                 fbits(gPlayerObject->Pos.z));
+        /* A1.2g: the state at the moment of the fall. */
+        arena_export_dbg_cam(8, (s32)gPlayerObject->actionState,
+                                (s32)gPlayerObject->unkA6, 0);
+
+        /* A1.2g FLOOR GUARD. The arena's floor polygon is SMALLER than the sim's
+         * collidable bounds, so the sim can walk player 0 off the edge; the
+         * ground query then finds nothing and parks Pos.y at 30000 (measured -
+         * actionState stays 4 throughout, so this is NOT the death path).
+         * Containment until the sim geometry is re-matched to the real floor
+         * (section 8.5a, a sim change). Runs AFTER the position drive below has
+         * had a frame to settle, i.e. it corrects the previous frame's overrun. */
+        if (arena_export_floor_guard(fbits(gPlayerObject->Pos.x),
+                                     fbits(gPlayerObject->Pos.y),
+                                     fbits(gPlayerObject->Pos.z))) {
+            gPlayerObject->Pos.x = arena_export_floor_last_x();
+            gPlayerObject->Pos.y = arena_export_floor_last_y();
+            gPlayerObject->Pos.z = arena_export_floor_last_z();
+        }
     }
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {

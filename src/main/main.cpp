@@ -86,6 +86,10 @@ extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
 extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx);        // A1.5 camera probe log
+extern "C" void arena_export_floor_guard(uint8_t* rdram, recomp_context* ctx);    // A1.2g floor guard
+extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_last_y(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_last_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -952,6 +956,10 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
     REGISTER_FUNC(arena_export_dbg_cam);
+    REGISTER_FUNC(arena_export_floor_guard);
+    REGISTER_FUNC(arena_export_floor_last_x);
+    REGISTER_FUNC(arena_export_floor_last_y);
+    REGISTER_FUNC(arena_export_floor_last_z);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);

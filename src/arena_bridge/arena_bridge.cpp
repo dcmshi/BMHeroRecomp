@@ -424,6 +424,42 @@ extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * 
 extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z; }
 extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT; }
 
+/* ---- A1.2g floor guard ---------------------------------------------------
+ * The arena's floor polygon is SMALLER than the sim's collidable bounds, so the
+ * sim can walk player 0 off the edge. When that happens the game's ground query
+ * finds nothing and parks Pos.y at 30000 - measured, with actionState staying 4
+ * throughout, so this is NOT the death path and NOT a crash; the player just
+ * hangs off-map and X/Z freeze.
+ *
+ * Until the sim geometry is re-matched to the real floor (section 8.5a - the
+ * proper fix, and a sim change), this guard keeps the player on the floor: the
+ * bridge remembers the last position with a valid ground height, and the patch
+ * restores it whenever the sentinel appears. State lives here because patches
+ * must be stateless.
+ *
+ * It is a CONTAINMENT measure, not a correctness fix: the sim still believes the
+ * player is out there, so sim and render disagree while the guard is holding. It
+ * stops the visible fall and lets a sweep keep mapping the floor. */
+namespace {
+    bool  g_floor_ok = false;
+    float g_floor_x = 0.0f, g_floor_y = 0.0f, g_floor_z = 0.0f;
+}
+extern "C" int arena_floor_guard(int xbits, int ybits, int zbits) {
+    float x, y, z;
+    std::memcpy(&x, &xbits, sizeof x);
+    std::memcpy(&y, &ybits, sizeof y);
+    std::memcpy(&z, &zbits, sizeof z);
+    if (y < 10000.0f) {                 /* valid ground height -> remember it */
+        g_floor_ok = true;
+        g_floor_x = x; g_floor_y = y; g_floor_z = z;
+        return 0;                       /* nothing to correct */
+    }
+    return g_floor_ok ? 1 : 0;          /* 1 = off-map, restore last good */
+}
+extern "C" float arena_floor_last_x(void) { return g_floor_x; }
+extern "C" float arena_floor_last_y(void) { return g_floor_y; }
+extern "C" float arena_floor_last_z(void) { return g_floor_z; }
+
 /* A1.5 camera probe. The patch calls this every frame for 5 tags; the GATE and
  * THROTTLE live here, not in the patch, because patches must stay stateless (a
  * patch-local counter aborts 0xC0000409). Same division of labour as
@@ -434,7 +470,41 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
     static const bool  armed = (mode != nullptr && std::atoi(mode) == 6);
     if (!armed) return;
-    if (tag < 0 || tag > 7) return;
+    if (tag < 0 || tag > 8) return;
+
+    /* A1.2g floor-extent tracker. Runs EVERY frame, BEFORE the log throttle -
+     * a 30-frame sample is far too coarse to locate a floor edge.
+     *
+     * Y == 30000 is the game's "no ground here" sentinel (observed; actionState
+     * stays 4 throughout, so it is NOT a death or fall state - the player simply
+     * walked off the floor polygon). A sample with a normal Y is therefore ON
+     * the floor, and the running min/max of those gives the REAL floor extent in
+     * Hero coords: both the geometry fix (section 8.5a - sim bounds must track
+     * the rendered map) and the true centre the fixed camera should aim at. */
+    if (tag == 7) {
+        float px, py, pz;
+        std::memcpy(&px, &xbits, sizeof px);
+        std::memcpy(&py, &ybits, sizeof py);
+        std::memcpy(&pz, &zbits, sizeof pz);
+        static bool  seen = false;
+        static float minx = 0, maxx = 0, minz = 0, maxz = 0;
+        if (py < 10000.0f) {                       /* on the floor */
+            if (!seen) { minx = maxx = px; minz = maxz = pz; seen = true; }
+            if (px < minx) minx = px;
+            if (px > maxx) maxx = px;
+            if (pz < minz) minz = pz;
+            if (pz > maxz) maxz = pz;
+            static int n = 0;
+            if ((++n % 30) == 0 && g_log) {
+                std::fprintf(g_log,
+                    "[floor] x=[%.1f..%.1f] z=[%.1f..%.1f] centre=(%.1f,%.1f) span=(%.1f x %.1f)\n",
+                    (double)minx, (double)maxx, (double)minz, (double)maxz,
+                    (double)((minx + maxx) * 0.5f), (double)((minz + maxz) * 0.5f),
+                    (double)(maxx - minx), (double)(maxz - minz));
+                std::fflush(g_log);
+            }
+        }
+    }
 
     static int frames = 0;
     if (tag == 0) frames++;              /* tag 0 arrives once per frame */
@@ -446,7 +516,11 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     std::memcpy(&z, &zbits, sizeof z);
 
     char line[160];
-    if (tag == 4) {
+    if (tag == 8) {
+        /* A1.2g: player actionState + objID as plain ints, to catch the state
+         * transition at the moment the player leaves the floor (ppos Y -> 30000). */
+        std::snprintf(line, sizeof line, "[cam] state=%d unkA6=%d\n", xbits, ybits);
+    } else if (tag == 4) {
         std::snprintf(line, sizeof line, "[cam] type=%d dist=%.1f\n", xbits, (double)y);
     } else {
         /* tags 5/6 are the SAME fields sampled immediately AFTER our write, so a

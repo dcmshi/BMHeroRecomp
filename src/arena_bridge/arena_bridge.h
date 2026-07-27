@@ -61,6 +61,11 @@ void  arena_dbg_anim(int idx, int frame);   /* burst-log live player anim idx+fr
  * takes no float arguments. Probe-mode gating and throttling are native-side, so
  * the patch can call this unconditionally and stay stateless. */
 void  arena_dbg_cam(int tag, int xbits, int ybits, int zbits);
+/* A1.2g floor guard: 1 = player is off-map, restore arena_floor_last_*. */
+int   arena_floor_guard(int xbits, int ybits, int zbits);
+float arena_floor_last_x(void);
+float arena_floor_last_y(void);
+float arena_floor_last_z(void);
 /* A1.5: arena centre in Hero world coords (same frozen-origin mapping as the
  * puppets), for gView.at. */
 float arena_cam_at_x(void);
