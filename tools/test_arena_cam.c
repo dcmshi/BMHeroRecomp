@@ -127,6 +127,31 @@ int main(void) {
               "spawn %d at (%.3f,%.3f) is outside the measured floor (half %.4f u)",
               i, sx, sz, want);
     }
+    /* ---- ASSUMPTION 7: no spawn sits on a DAMAGE TILE. ----
+     * The Nitros room has hazard tiles (surface type 0xF7, which the game keys
+     * its damage flag off - bmhero 69AA0.c:411) in four corner blocks covering
+     * |x| >= ARENA_HAZARD_MIN AND |z| >= ARENA_HAZARD_MIN, measured with the
+     * surface-type raster. The v8 spawns sat at 780 Hero - inside them - so
+     * every player spawned standing on a damage tile and took a hit and a stun
+     * on arrival.
+     *
+     * The SIM cannot guard this: it does not model the room's tiles at all, so a
+     * sim-side health check looks perfectly healthy. (One did, and produced a
+     * confident "these are not damage tiles" that was simply the wrong
+     * instrument.) Only measured map data can catch it - which is what this is.
+     * Clearance is a full player radius so the body clears, not just the centre. */
+    const double radius_hero = 0.35 * ARENA_RENDER_SCALE;   /* TUNE_PLAYER_RADIUS */
+    for (int i = 0; i < 4; i++) {
+        double hx = ((double)arena_nitros_standin.spawns[i].x / 4096.0) * ARENA_RENDER_SCALE;
+        double hz = ((double)arena_nitros_standin.spawns[i].z / 4096.0) * ARENA_RENDER_SCALE;
+        int in_hazard = (fabs(hx) + radius_hero >= ARENA_HAZARD_MIN) &&
+                        (fabs(hz) + radius_hero >= ARENA_HAZARD_MIN);
+        CHECK(!in_hazard,
+              "spawn %d at Hero (%.0f,%.0f) is on a DAMAGE TILE - the corner "
+              "hazard starts at |%.0f| on BOTH axes (player radius %.0f)",
+              i, hx, hz, (double)ARENA_HAZARD_MIN, radius_hero);
+    }
+
     /* The camera must actually be able to frame the floor it is aimed at. */
     CHECK(ARENA_CAM_DIST > 2.0f * ARENA_FLOOR_HALF * ARENA_CAM_SIN_PITCH * 0.75f,
           "ARENA_CAM_DIST %.0f is too short to frame a %.0f-deep floor at pitch "

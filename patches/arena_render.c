@@ -115,7 +115,7 @@ DECLARE_FUNC(s32,  arena_export_floor_raster_next);
 DECLARE_FUNC(f32,  arena_export_floor_raster_px);
 DECLARE_FUNC(f32,  arena_export_floor_raster_py);
 DECLARE_FUNC(f32,  arena_export_floor_raster_pz);
-DECLARE_FUNC(void, arena_export_floor_raster_report, s32 sel, s32 hbits);
+DECLARE_FUNC(void, arena_export_floor_raster_report, s32 sel, s32 hbits, s32 type);
 /* The game's ground query (decomp src/code/69AA0.c:205). Pure: it takes only a
  * position and refreshes the collision-result globals below - no caller context,
  * no object index. Every object's own ground handling calls it the same way. */
@@ -127,6 +127,11 @@ extern void func_80078168(f32 x, f32 y, f32 z);
  * is GQ_SEL==0 && GQ_H[0]==-30000.0f (69AA0.c:401). */
 #define GQ_SEL  (*(volatile u8*)0x801776E0 & 1)
 #define GQ_H    ((volatile f32*)0x80177760)
+/* Surface TYPE (the object's unkAE). 69AA0.c:411 keys the hazard path off it:
+ * types 0xF8 / 0xF7 / 0xF5 / 0xD9 raise the damage flag. Rastering this maps
+ * the room's damage tiles exactly - the Nitros corners hurt and stun the
+ * game-side player, and our spawns sit on them. */
+#define GQ_TYPE ((volatile s32*)0x80177740)
 DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
@@ -640,7 +645,7 @@ void arena_render_routine(void) {
                     s32 sel = GQ_SEL;
                     union { f32 f; s32 i; } h;
                     h.f = GQ_H[sel];
-                    arena_export_floor_raster_report(sel, h.i);
+                    arena_export_floor_raster_report(sel, h.i, GQ_TYPE[sel]);
                 }
             }
         }

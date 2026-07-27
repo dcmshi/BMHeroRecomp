@@ -45,6 +45,22 @@
 #define ARENA_FLOOR_HALF   950.0f
 #define ARENA_RENDER_SCALE 120.0f   /* Hero units per sim unit (arena_bridge.cpp) */
 
+/* MEASURED HAZARD CORNERS (probe mode 7 surface-type raster, 2026-07-27).
+ * The Nitros room puts damage tiles in four 250x250 corner blocks - surface
+ * type 0xF7, which 69AA0.c:411 keys the damage flag off. They cost the
+ * game-side player health and stun him briefly. The sim does not model them.
+ *
+ * A tile is hazardous where |x| >= this AND |z| >= this:
+ *
+ *     z= 950  ccccc.....bbbbb.........bbbbb.....ccccc
+ *     z= 750  ccccc.....bbbbb.........bbbbb.....ccccc     c = 0xF7 hazard
+ *     z= 700  bbbbb..........bbbbaaaaa..........aaaaa
+ *
+ * This matters because our sim spawns USED to sit at +-780 Hero - inside them.
+ * test_arena_cam.c now asserts every spawn clears this region by a player
+ * radius. Suppressing the tiles outright is the remaining A1.2g work. */
+#define ARENA_HAZARD_MIN   750.0f
+
 /* Precomputed trig - guarded by tools/test_arena_cam.c. */
 #define ARENA_CAM_SIN_PITCH   0.8660254f   /* sin(60) */
 #define ARENA_CAM_COS_PITCH   0.5f         /* cos(60) */

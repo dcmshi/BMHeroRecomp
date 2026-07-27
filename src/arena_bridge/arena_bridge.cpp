@@ -672,6 +672,7 @@ namespace {
     float fr_x0 = 0.0f, fr_z0 = 0.0f, fr_y = 0.0f;   /* box corner + probe height */
     float fr_px = 0.0f, fr_pz = 0.0f;                /* the point the patch must query now */
     unsigned char fr_hit[FR_MAX * FR_MAX];
+    unsigned char fr_type[FR_MAX * FR_MAX];   /* surface type per cell (unkAE) */
     float fr_minx = 0, fr_maxx = 0, fr_minz = 0, fr_maxz = 0, fr_minh = 0, fr_maxh = 0;
     long  fr_hits = 0;
 
@@ -714,6 +715,43 @@ namespace {
             row[FR_N] = '\0';
             std::fprintf(g_log, "[raster] z=%8.1f %s\n", (double)(fr_z0 + FR_STEP * iz), row);
         }
+
+        /* SURFACE TYPES. 69AA0.c:411 keys the hazard path off the surface type
+         * (the object's unkAE): 0xF8 / 0xF7 / 0xF5 / 0xD9 raise the damage flag,
+         * 0xFF is plain floor. The Nitros corners damage and stun the game-side
+         * player and our spawns sit on them, so map WHERE each type is - knowing
+         * only that hazards exist somewhere is not actionable. */
+        {
+            int seen[256] = { 0 };
+            for (int i = 0; i < FR_N * FR_N; i++)
+                if (fr_hit[i]) seen[fr_type[i]]++;
+            std::fprintf(g_log, "[raster] surface types present:\n");
+            char sym[256];
+            const char* pool = "abcdefghijklmnopqrstuvwxyz";
+            int next = 0;
+            for (int t = 0; t < 256; t++) {
+                sym[t] = '?';
+                if (!seen[t]) continue;
+                if (t == 0xFF)      sym[t] = '.';        /* plain floor */
+                else if (next < 26) sym[t] = pool[next++];
+                const char* note = "";
+                if (t == 0xF8 || t == 0xF7 || t == 0xF5 || t == 0xD9)
+                    note = "   <== HAZARD (69AA0.c:411 raises the damage flag)";
+                std::fprintf(g_log, "[raster]   type 0x%02X '%c' cells=%d%s\n",
+                             t, sym[t], seen[t], note);
+            }
+            std::fprintf(g_log, "[raster] type map (same grid; '.' = plain floor)\n");
+            for (int iz = 0; iz < FR_N; iz++) {
+                char row[FR_MAX + 1];
+                for (int ix = 0; ix < FR_N; ix++) {
+                    int i = iz * FR_N + ix;
+                    row[ix] = fr_hit[i] ? sym[fr_type[i]] : ' ';
+                }
+                row[FR_N] = '\0';
+                std::fprintf(g_log, "[raster] z=%8.1f %s\n",
+                             (double)(fr_z0 + FR_STEP * iz), row);
+            }
+        }
         std::fflush(g_log);
     }
 }
@@ -739,6 +777,7 @@ extern "C" int arena_floor_raster_active(void) {
         fr_z0 = g_origin_z - FR_STEP * (FR_N / 2);
         fr_y  = g_origin_y;              /* a height known to be on the floor */
         std::memset(fr_hit, 0, sizeof fr_hit);
+        std::memset(fr_type, 0xFF, sizeof fr_type);   /* 0xFF = plain floor */
         fr_started = true;
         if (g_log) {
             std::fprintf(g_log, "[raster] START level=%d centre=(%.1f,%.1f) y=%.1f "
@@ -765,12 +804,13 @@ extern "C" float arena_floor_raster_py(void) { return fr_y; }
 /* sel = D_801776E0 & 1, hbits = D_80177760[sel] as a bit pattern (no float args
  * over the export ABI). Advancing the cursor HERE, not in _next, keeps the point
  * and the answer in lockstep no matter how the patch batches its loop. */
-extern "C" void arena_floor_raster_report(int sel, int hbits) {
+extern "C" void arena_floor_raster_report(int sel, int hbits, int type) {
     if (!fr_started || fr_done || fr_cursor >= FR_N * FR_N) return;
     float h;
     std::memcpy(&h, &hbits, sizeof h);
     if (!(sel == 0 && h == -30000.0f)) {          /* the game's own "no floor" rule */
-        fr_hit[fr_cursor] = 1;
+        fr_hit[fr_cursor]  = 1;
+        fr_type[fr_cursor] = (unsigned char)(type & 0xFF);
         if (fr_hits == 0) {
             fr_minx = fr_maxx = fr_px; fr_minz = fr_maxz = fr_pz; fr_minh = fr_maxh = h;
         }

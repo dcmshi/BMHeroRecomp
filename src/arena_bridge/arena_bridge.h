@@ -73,7 +73,7 @@ int   arena_floor_raster_next(void);     /* 1 = a point is ready in px/py/pz   *
 float arena_floor_raster_px(void);
 float arena_floor_raster_py(void);
 float arena_floor_raster_pz(void);
-void  arena_floor_raster_report(int sel, int hbits);   /* D_801776E0&1, D_80177760[sel] */
+void  arena_floor_raster_report(int sel, int hbits, int type);  /* sel, height, surface type */
 /* A1.5: arena centre in Hero world coords (same frozen-origin mapping as the
  * puppets), for gView.at. */
 float arena_cam_at_x(void);

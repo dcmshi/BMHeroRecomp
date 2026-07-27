@@ -207,7 +207,8 @@ extern "C" void arena_export_floor_raster_px(uint8_t* rdram, recomp_context* ctx
 extern "C" void arena_export_floor_raster_py(uint8_t* rdram, recomp_context* ctx)     { (void)rdram; _return(ctx, arena_floor_raster_py()); }
 extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx)     { (void)rdram; _return(ctx, arena_floor_raster_pz()); }
 extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx) {
-    arena_floor_raster_report(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+    arena_floor_raster_report(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                              _arg<2, int>(rdram, ctx));
 }
 
 extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_dist()); }
