@@ -795,7 +795,9 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
     /* mode 8 (direction probe) reuses this logger for the facing check. */
     static const bool  armed = (mode != nullptr &&
-                                (std::atoi(mode) == 6 || std::atoi(mode) == 8));
+                                (std::atoi(mode) == 6 || std::atoi(mode) == 8 ||
+                                 std::atoi(mode) == 9));
+    static const bool  turnprobe = (mode != nullptr && std::atoi(mode) == 9);
     if (!armed) return;
     if (tag < 0 || tag > 10) return;
 
@@ -833,6 +835,24 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
         }
     }
 
+    /* Turn probe (mode 9) needs tag 10 EVERY frame, not one sample per 30:
+     * the question is whether the game's own walker SNAPS its facing on a
+     * reversal or sweeps it at a bounded rate, and a 30-frame sample cannot
+     * tell a snap from a sweep. Logged before the throttle for that reason. */
+    if (turnprobe && tag == 10) {
+        float ma, sy;
+        std::memcpy(&ma, &xbits, sizeof ma);
+        std::memcpy(&sy, &ybits, sizeof sy);
+        static int tf = 0;
+        if (g_log && tf < 600) {
+            std::fprintf(g_log, "[turn] f%03d moveAngle=%.1f simYaw=%.1f state=%d\n",
+                         tf, (double)ma, (double)sy, zbits);
+            std::fflush(g_log);
+        }
+        tf++;
+        return;
+    }
+
     static int frames = 0;
     if (tag == 0) frames++;              /* tag 0 arrives once per frame */
     if ((frames % 30) != 0) return;      /* one sample per ~half second */
@@ -862,8 +882,12 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
          * is actually going - which matters now that the bridge negates the
          * stick's Y for the sim but the game computes moveAngle from the raw
          * stick. */
-        std::snprintf(line, sizeof line, "[cam] face moveAngle=%.1f simYaw=%.1f\n",
-                      (double)x, (double)y);
+        /* state included so a long idle ON the spawn pad shows whether the room's
+         * damage tiles are firing under us - A1.2g put those tiles at the
+         * corners, which is exactly where our spawns are. */
+        std::snprintf(line, sizeof line,
+                      "[cam] face moveAngle=%.1f simYaw=%.1f state=%d\n",
+                      (double)x, (double)y, zbits);
     } else {
         /* tags 5/6 are the SAME fields sampled immediately AFTER our write, so a
          * post-vs-entry comparison shows whether anything stomps gView between

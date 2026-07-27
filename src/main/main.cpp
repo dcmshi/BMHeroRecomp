@@ -637,7 +637,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7' || v[0] == '8');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster 8=direction */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7' || v[0] == '8' || v[0] == '9');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster 8=direction 9=turn */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -699,6 +699,19 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
             }
+            if (mode && mode[0] == '9') {
+                /* TURN probe: run, STOP COMPLETELY, then run the opposite way.
+                 * Measures what the GAME'S OWN walker does to moveAngle on a
+                 * reversal - snap or bounded sweep - because that is the
+                 * reference our sim's uniform gradual turn is supposed to
+                 * match, and the RE says the real walker snaps instantly in
+                 * some action states (movement-re.md ## Turn). */
+                static uint32_t tp = 0;
+                tp++;
+                if      (tp > 120 && tp < 260) *y =  1.0f;   /* run one way   */
+                else if (tp < 330)             *y =  0.0f;   /* stop, settle  */
+                else if (tp < 520)             *y = -1.0f;   /* reverse 180   */
+            }
             if (mode && mode[0] == '8') {
                 /* DIRECTION probe. Holds ONE stick axis for a long stretch so the
                  * on-screen direction of travel is unambiguous: screenshot early
@@ -758,7 +771,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7' || soak[0] == '8') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7' || soak[0] == '8' || soak[0] == '9') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;

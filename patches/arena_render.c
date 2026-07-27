@@ -382,7 +382,8 @@ void arena_render_routine(void) {
          * NEGATED stick Y, so the two can disagree about which way the player is
          * pointing. Log both and compare rather than assume. */
         arena_export_dbg_cam(10, fbits(gPlayerObject->moveAngle),
-                                 fbits(arena_export_player_yaw(0)), 0);
+                                 fbits(arena_export_player_yaw(0)),
+                                 (s32)gPlayerObject->actionState);
 
         /* A1.4: set-bomb animation for player 0. The sim tick above (line ~139)
          * latched a set edge if player 0 placed a bomb this frame (bomb
