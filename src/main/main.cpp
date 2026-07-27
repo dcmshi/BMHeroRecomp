@@ -86,9 +86,9 @@ extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
 extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx);        // A1.5 camera probe log
-extern "C" void arena_cam_at_x_export(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
-extern "C" void arena_cam_at_y_export(uint8_t* rdram, recomp_context* ctx);
-extern "C" void arena_cam_at_z_export(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
+extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
@@ -664,13 +664,31 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 static uint32_t ap = 0;
                 ap++;
                 if (ap > 30 && ap < 520) *y = -1.0f;            /* keep moving (locomotion anims live) */
-                if ((ap >= 240 && ap < 248) || (ap >= 300 && ap < 308)) {
+                /* STANDING set comes FIRST. The soak dwells ~10s after [capture],
+                 * which never reached the old ap>=360 phase - so the gate only
+                 * ever saw the MOVING sets, where the walker stomps the pose
+                 * (the documented A1.4 limitation) and the frame counter cannot
+                 * advance. The standing set is the case the gate is meant to
+                 * assert, so it must land early and reliably. */
+                if (ap >= 200 && ap < 216) {
+                    *y = 0.0f;                                   /* stand still */
+                    if (ap >= 204) *buttons |= 0x2000;           /* then set */
+                }
+                if ((ap >= 300 && ap < 308) || (ap >= 360 && ap < 368)) {
                     *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
                 }
-                if (ap >= 360 && ap < 368) {
-                    *y = 0.0f;                                   /* set while STANDING (control) */
-                    *buttons |= 0x2000;
-                }
+            }
+            if (mode && mode[0] == '6') {
+                /* A1.5 camera probe: sweep all four directions so the [cam] ppos
+                 * samples span the arena. The min/max of those give the REAL
+                 * traversable extent in Hero coords, hence the true centre -
+                 * measured, not derived from the (run-varying) spawn anchor. */
+                static uint32_t cs = 0;
+                cs++;
+                if      (cs < 120) *y = -1.0f;
+                else if (cs < 260) *x =  1.0f;
+                else if (cs < 400) *y =  1.0f;
+                else               *x = -1.0f;
             }
             if (mode && mode[0] == '5') {
                 /* TEMP arena-measurement sweep: drive all four stick directions
@@ -934,9 +952,9 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
     REGISTER_FUNC(arena_export_dbg_cam);
-    recomp::overlays::register_base_export("arena_cam_at_x", arena_cam_at_x_export);
-    recomp::overlays::register_base_export("arena_cam_at_y", arena_cam_at_y_export);
-    recomp::overlays::register_base_export("arena_cam_at_z", arena_cam_at_z_export);
+    REGISTER_FUNC(arena_export_cam_at_x);
+    REGISTER_FUNC(arena_export_cam_at_y);
+    REGISTER_FUNC(arena_export_cam_at_z);
     recompui::register_ui_exports();
     recomputil::register_data_api_exports();
     recomptheme::set_custom_theme();

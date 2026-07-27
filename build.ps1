@@ -112,7 +112,17 @@ if (-not (Test-Path $buildDir)) {
 }
 Write-Host "`n=== cmake --build $buildDir --target BMHeroRecompiled ==="
 & cmake --build $buildDir --target BMHeroRecompiled
-if ($LASTEXITCODE -ne 0) { Fail "cmake build failed" }
+if ($LASTEXITCODE -ne 0) {
+    # Observed 3x on 2026-07-26: straight after a patches `make clean`, the first
+    # cmake run can fail while N64Recomp regenerates RecompiledPatches/, and an
+    # immediate retry succeeds every time. Retrying is much safer than the
+    # alternative - a FAILED build leaves the previous exe in place, and the soak
+    # will happily test that stale binary. That exact trap invalidated an A/B
+    # isolation run before it was caught.
+    Write-Host "`nfirst build attempt failed - retrying once (post-make-clean regen race)" -ForegroundColor Yellow
+    & cmake --build $buildDir --target BMHeroRecompiled
+    if ($LASTEXITCODE -ne 0) { Fail "cmake build failed (twice)" }
+}
 
 $exe = Join-Path $buildDir "BMHeroRecompiled.exe"
 if (-not (Test-Path $exe)) { Fail "build reported success but $exe is missing" }

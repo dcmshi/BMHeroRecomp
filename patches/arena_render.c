@@ -227,6 +227,14 @@ void arena_render_routine(void) {
         arena_cam_stamp();
         arena_export_dbg_cam(5, fbits(gView.rot.x), fbits(gView.rot.y), fbits(gView.rot.z));
         arena_export_dbg_cam(6, fbits(gView.at.x),  fbits(gView.at.y),  fbits(gView.at.z));
+        /* Player position in HERO coords. Sweeping all four directions (mode 6)
+         * makes the min/max of these the real traversable extent, hence the true
+         * floor centre — measured, not derived from the spawn anchor, which the
+         * capture log shows varies between runs (origin.z was 0 in one boot and
+         * 171 in the next). */
+        arena_export_dbg_cam(7, fbits(gPlayerObject->Pos.x),
+                                fbits(gPlayerObject->Pos.y),
+                                fbits(gPlayerObject->Pos.z));
     }
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {

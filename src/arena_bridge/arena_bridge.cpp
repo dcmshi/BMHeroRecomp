@@ -434,7 +434,7 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
     static const bool  armed = (mode != nullptr && std::atoi(mode) == 6);
     if (!armed) return;
-    if (tag < 0 || tag > 6) return;
+    if (tag < 0 || tag > 7) return;
 
     static int frames = 0;
     if (tag == 0) frames++;              /* tag 0 arrives once per frame */
@@ -453,7 +453,7 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
          * post-vs-entry comparison shows whether anything stomps gView between
          * frames. Distinguishes "our write never ran" from "it ran and was
          * overwritten" - two very different bugs that look identical at entry. */
-        static const char* names[] = { "at", "eye", "rot", "up", "", "wrote_rot", "wrote_at" };
+        static const char* names[] = { "at", "eye", "rot", "up", "", "wrote_rot", "wrote_at", "ppos" };
         std::snprintf(line, sizeof line, "[cam] %s=(%.2f,%.2f,%.2f)\n",
                       names[tag], (double)x, (double)y, (double)z);
     }
