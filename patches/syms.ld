@@ -114,3 +114,6 @@ arena_export_cam_dist = 0x8F00020C;
 arena_export_cam_zfar = 0x8F000210;
 arena_export_cam_enabled = 0x8F000214;
 arena_export_set_hold = 0x8F000218;
+arena_export_player_hp = 0x8F00021C;
+arena_export_player_stocks = 0x8F000220;
+arena_export_match_phase = 0x8F000224;

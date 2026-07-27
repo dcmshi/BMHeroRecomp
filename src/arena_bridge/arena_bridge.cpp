@@ -553,6 +553,19 @@ extern "C" int arena_set_hold(void) {
     return (g_anim_since_set >= 0 && g_anim_since_set < 24) ? 1 : 0;
 }
 
+/* ---- A1.2g HUD ----------------------------------------------------------
+ * The reused Hero HUD reads these. Kept as plain accessors so the patch does the
+ * driving and the sim stays the single source of truth. */
+extern "C" int arena_player_hp(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0;
+    return g_state.players[i].hp;
+}
+extern "C" int arena_player_stocks(int i) {
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0;
+    return g_state.players[i].stocks_won;
+}
+extern "C" int arena_match_phase(void) { return g_state.phase; }
+
 extern "C" int arena_cam_enabled(void) {
     static const int on = []() {
         const char* v = std::getenv("ARENA_CAM_OFF");

@@ -140,6 +140,9 @@ DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
 DECLARE_FUNC(s32,  arena_export_set_hold);  /* 1 while the set pose must hold   */
+DECLARE_FUNC(s32,  arena_export_player_hp, s32 i);      /* A1.2g HUD: sim HP     */
+DECLARE_FUNC(s32,  arena_export_player_stocks, s32 i);  /* rounds won            */
+DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*               */
 /* ZFAR, consumed by guPerspective in the in-level draw (decomp 71AA0.c:610) and
  * set per-level from gLevelInfo[level]->unk2C (56800.c:372). Auto-named data
  * symbol -> address literal (section 8.2). The decomp declares it as a union
@@ -244,6 +247,38 @@ void arena_render_routine(void) {
      * Written EVERY frame and CLEARED outside battle, so leaving a match for the
      * campaign in the same process cannot leave the player invincible. */
     gDebugInvincibileFlag = arena_bridge_is_battle() ? 1 : 0;
+
+    /* A1.2g HUD - REUSE Hero's own in-level HUD rather than building an overlay.
+     * The art, layout and draw already exist and already look like the game; all
+     * they lack is our numbers. Driven EVERY frame so it tracks the sim exactly,
+     * including across a round restart.
+     *
+     *   gHealthCount <- sim HP. TUNE_START_HP is 4 to match gMaxHealth, which the
+     *                   game hard-codes to 4 (76640.c func_80088134), so this is
+     *                   1:1 - no scaling, no half-bars.
+     *   gBombCount   <- 3, gFireCount <- 3. These count POWERUPS COLLECTED and
+     *                   cap at 3 (21E10.c:366/374); the HUD draws count + 1, so
+     *                   3 renders as "4" - the maximum, not an off-by-one.
+     *                   Battle has no powerups; everyone is permanently fully
+     *                   kitted, so showing max is honest rather than decorative.
+     *   gGemCount    <- 0. Gems do not exist in battle.
+     *   gScore       <- 0. The campaign score is meaningless here. Zeroing only
+     *                   "censors" it to 00000 - actually hiding it, or
+     *                   repurposing the field per player, means touching the HUD
+     *                   draw and is a separate decision.
+     *
+     * Non-battle is left completely alone: these are the campaign's own counters
+     * and writing them outside battle would corrupt a real playthrough. */
+    if (arena_bridge_is_battle()) {
+        s32 hp = arena_export_player_hp(0);
+        if (hp < 0) hp = 0;
+        if (hp > (s32)gMaxHealth) hp = (s32)gMaxHealth;
+        gHealthCount = (s8)hp;
+        gBombCount   = 3;
+        gFireCount   = 3;
+        gGemCount    = 0;
+        gScore       = 0;
+    }
 
     /* Boss suppression: BEFORE the update loop runs any object's per-frame
      * behaviour, deactivate every gObjects[14..77] that isn't one of our actors

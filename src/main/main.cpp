@@ -100,6 +100,9 @@ extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx);     
 extern "C" void arena_export_cam_zfar(uint8_t* rdram, recomp_context* ctx);      // A1.5 far clip
 extern "C" void arena_export_cam_enabled(uint8_t* rdram, recomp_context* ctx);   // A1.5 runtime A/B
 extern "C" void arena_export_set_hold(uint8_t* rdram, recomp_context* ctx);      // A1.4 set-pose hold
+extern "C" void arena_export_player_hp(uint8_t* rdram, recomp_context* ctx);     // A1.2g HUD
+extern "C" void arena_export_player_stocks(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_match_phase(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -1022,6 +1025,9 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_cam_zfar);
     REGISTER_FUNC(arena_export_cam_enabled);
     REGISTER_FUNC(arena_export_set_hold);
+    REGISTER_FUNC(arena_export_player_hp);
+    REGISTER_FUNC(arena_export_player_stocks);
+    REGISTER_FUNC(arena_export_match_phase);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);

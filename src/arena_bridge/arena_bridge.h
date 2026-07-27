@@ -15,6 +15,10 @@ float arena_get_player_x(int i);
 float arena_get_player_y(int i);
 float arena_get_player_z(int i);
 float arena_get_player_yaw_deg(int i);
+/* HUD (A1.2g): sim state the reused Hero HUD is driven from. */
+int   arena_player_hp(int i);       /* 0..TUNE_START_HP */
+int   arena_player_stocks(int i);   /* rounds won this match */
+int   arena_match_phase(void);      /* PHASE_* */
 void  arena_dbg_dump(int i, int objID, int actionState);   /* A1.2b diag: log one object-table row */
 float arena_get_bomber_off_x(int i);   /* A1.2b: (sim_pos_i - sim_pos_0).x * scale */
 float arena_get_bomber_off_z(int i);
