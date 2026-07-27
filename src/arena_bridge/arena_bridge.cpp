@@ -839,7 +839,27 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
                                  std::atoi(mode) == 9));
     static const bool  turnprobe = (mode != nullptr && std::atoi(mode) == 9);
     if (!armed) return;
-    if (tag < 0 || tag > 10) return;
+    if (tag < 0 || tag > 11) return;
+
+    /* A1.2g exit-trigger hunt: gCurrentLevel + the next-level request vars.
+     * BEFORE the throttle - a level transition is a single-frame event and a
+     * one-in-30 sample would miss it. Logged only when the values CHANGE, so the
+     * moment of a transition stands out instead of drowning in per-frame noise. */
+    if (tag == 11) {
+        static int last_lv = -12345, last_a = -12345, last_b = -12345;
+        if (xbits != last_lv || ybits != last_a || zbits != last_b) {
+            last_lv = xbits; last_a = ybits; last_b = zbits;
+            std::printf("[level] gCurrentLevel=%d next=(%d,%d)\n",
+                        xbits, ybits, zbits);
+            std::fflush(stdout);
+            if (g_log) {
+                std::fprintf(g_log, "[level] gCurrentLevel=%d next=(%d,%d)\n",
+                             xbits, ybits, zbits);
+                std::fflush(g_log);
+            }
+        }
+        return;
+    }
 
     /* A1.2g floor-extent tracker. Runs EVERY frame, BEFORE the log throttle -
      * a 30-frame sample is far too coarse to locate a floor edge.
@@ -906,7 +926,12 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     if (tag == 8) {
         /* A1.2g: player actionState + objID as plain ints, to catch the state
          * transition at the moment the player leaves the floor (ppos Y -> 30000). */
-        std::snprintf(line, sizeof line, "[cam] state=%d unkA6=%d\n", xbits, ybits);
+        /* hazard = D_8016E080, the code the game derives from the surface under
+         * the player (1 = the 0xF7 damage tile at our corners). Non-zero WITH no
+         * damage and no stun is the proof that suppression works; "nothing bad
+         * happened" on its own proves nothing. */
+        std::snprintf(line, sizeof line, "[cam] state=%d unkA6=%d hazard=%d\n",
+                      xbits, ybits, zbits);
     } else if (tag == 4) {
         std::snprintf(line, sizeof line, "[cam] type=%d dist=%.1f\n", xbits, (double)y);
     } else if (tag == 9) {

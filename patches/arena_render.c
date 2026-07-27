@@ -132,6 +132,10 @@ extern void func_80078168(f32 x, f32 y, f32 z);
  * the room's damage tiles exactly - the Nitros corners hurt and stun the
  * game-side player, and our spawns sit on them. */
 #define GQ_TYPE ((volatile s32*)0x80177740)
+/* D_8016E080: the hazard code the game derives from the surface under the
+ * player (func_80086AD0, decomp 76640.c:714). 0 = none, 1 = the 0xF7 damage
+ * tile our corners use. Auto-named data symbol -> address literal. */
+#define gDebugHazardCode (*(volatile s8*)0x8016E080)
 DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
 DECLARE_FUNC(f32,  arena_export_cam_zfar);  /* battle-mode far clip plane       */
 DECLARE_FUNC(s32,  arena_export_cam_enabled);/* 0 = ARENA_CAM_OFF, runtime A/B  */
@@ -218,6 +222,29 @@ extern void (*gDebugRoutine2)(void);
  * suppresses that arena's boss. Full RE: integration notes §8. Actors are bomb
  * placeholders; real bomber models are a follow-up (skeletal, see above). */
 void arena_render_routine(void) {
+    /* A1.2g - SUPPRESS THE ROOM'S OWN DAMAGE. In battle the SIM owns every hit
+     * and every hit point; the game object is a puppet, so any damage the room
+     * lands on it is by definition wrong. It is also dangerous: the bypassed
+     * death path crashes (§8.9), which makes a room hazard a route to a hard
+     * crash.
+     *
+     * The Nitros floor has damage tiles at the four corners - surface type 0xF7,
+     * located exactly with the probe-7 surface-type raster. The chain is
+     * func_80086AD0 (reads the surface under gPlayerObject, sets D_8016E080 = 1
+     * for 0xF7, decomp 76640.c:714) -> the case 5/6 block inside func_80024744,
+     * which turns that into a damage request in D_80177648 (21E10.c:648) -> the
+     * application, gated on exactly one flag: `if (!gDebugInvincibileFlag)`
+     * (21E10.c:670).
+     *
+     * So ONE named flag suppresses the whole class - the tiles and anything else
+     * the room might throw - instead of us patching each hazard path separately.
+     * It is the game's own debug facility, and its only other uses are the debug
+     * menu's display and toggle, so nothing else changes.
+     *
+     * Written EVERY frame and CLEARED outside battle, so leaving a match for the
+     * campaign in the same process cannot leave the player invincible. */
+    gDebugInvincibileFlag = arena_bridge_is_battle() ? 1 : 0;
+
     /* Boss suppression: BEFORE the update loop runs any object's per-frame
      * behaviour, deactivate every gObjects[14..77] that isn't one of our actors
      * (the 3 player puppets or the 16 bomb actors — arena_is_actor_slot checks
@@ -280,9 +307,15 @@ void arena_render_routine(void) {
         arena_export_dbg_cam(7, fbits(gPlayerObject->Pos.x),
                                 fbits(gPlayerObject->Pos.y),
                                 fbits(gPlayerObject->Pos.z));
-        /* A1.2g: the state at the moment of the fall. */
+        /* A1.2g: player state, plus D_8016E080 - the HAZARD CODE the game derives
+         * from the surface under the player (func_80086AD0; 1 = the 0xF7 damage
+         * tile at our corners). Logging it is how the suppression is verified
+         * rather than assumed: a non-zero code with no damage and no stun proves
+         * the tile is being DETECTED and the damage SUPPRESSED, where "nothing
+         * bad happened" alone would prove nothing. */
         arena_export_dbg_cam(8, (s32)gPlayerObject->actionState,
-                                (s32)gPlayerObject->unkA6, 0);
+                                (s32)gPlayerObject->unkA6,
+                                (s32)gDebugHazardCode);
 
         /* A1.5 FAR CLIP. Tag 9 logs the LEVEL's authored ZFAR, then we raise it.
          * Measured: MAP_NITROS_1 already authors 8000 and the floor's far corner
@@ -386,6 +419,10 @@ void arena_render_routine(void) {
          * which the walker computes from the RAW stick - but the sim is now fed a
          * NEGATED stick Y, so the two can disagree about which way the player is
          * pointing. Log both and compare rather than assume. */
+        /* A1.2g exit-trigger hunt: watch gCurrentLevel and the level-transition
+         * request vars. A probe run that ends on the stage select changed one of
+         * these; logging them says WHICH and WHEN. */
+        arena_export_dbg_cam(11, gCurrentLevel, (s32)D_8016E432, (s32)D_8016E434);
         arena_export_dbg_cam(10, fbits(gPlayerObject->moveAngle),
                                  fbits(arena_export_player_yaw(0)),
                                  (s32)gPlayerObject->actionState);
