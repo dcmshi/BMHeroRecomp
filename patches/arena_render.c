@@ -15,7 +15,7 @@ DECLARE_FUNC(f32,  arena_export_player_yaw, s32 i);
 
 /* A1.2b puppet exports: native holds the frozen world origin + slot table
  * (patches must be stateless); we read placement back each frame. */
-DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz);
+DECLARE_FUNC(void, arena_export_puppet_capture, s32 bx, s32 by, s32 bz, s32 level);
 DECLARE_FUNC(s32,  arena_export_puppet_ready);
 DECLARE_FUNC(s32,  arena_export_spawn_gate);   /* A1.2d: 1 only after ~90 frames (heap-ready) */
 DECLARE_FUNC(s32,  arena_export_draw_gate);    /* A1.2e: 1 after ~30 frames (routine1 restore) */
@@ -107,6 +107,27 @@ DECLARE_FUNC(s32,  arena_export_floor_guard, s32 x, s32 y, s32 z);  /* A1.2g */
 DECLARE_FUNC(f32,  arena_export_floor_last_x);
 DECLARE_FUNC(f32,  arena_export_floor_last_y);
 DECLARE_FUNC(f32,  arena_export_floor_last_z);
+/* A1.2g floor raster (ARENA_AUTO_BATTLE=7). Native owns the grid cursor and the
+ * accumulator; the patch just answers "is there floor at this point?" using the
+ * game's own ground query. See the block at the end of arena_render_routine. */
+DECLARE_FUNC(s32,  arena_export_floor_raster_active);
+DECLARE_FUNC(s32,  arena_export_floor_raster_next);
+DECLARE_FUNC(f32,  arena_export_floor_raster_px);
+DECLARE_FUNC(f32,  arena_export_floor_raster_py);
+DECLARE_FUNC(f32,  arena_export_floor_raster_pz);
+DECLARE_FUNC(void, arena_export_floor_raster_report, s32 sel, s32 hbits);
+/* The game's ground query (decomp src/code/69AA0.c:205). Pure: it takes only a
+ * position and refreshes the collision-result globals below - no caller context,
+ * no object index. Every object's own ground handling calls it the same way. */
+extern void func_80078168(f32 x, f32 y, f32 z);
+/* Its results. Auto-named D_ data symbols are reached by ADDRESS LITERAL (§8.2)
+ * rather than by extern: the literal form is proven, and a symbol that fails to
+ * resolve through the patch reloc path corrupts silently. GQ_SEL selects which
+ * of the two result slots holds the answer; the game's own "no floor here" test
+ * is GQ_SEL==0 && GQ_H[0]==-30000.0f (69AA0.c:401). */
+#define GQ_SEL  (*(volatile u8*)0x801776E0 & 1)
+#define GQ_H    ((volatile f32*)0x80177760)
+DECLARE_FUNC(f32,  arena_export_cam_dist);  /* ARENA_CAM_DIST, env-overridable  */
 DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
 DECLARE_FUNC(f32,  arena_export_cam_at_y);
 DECLARE_FUNC(f32,  arena_export_cam_at_z);
@@ -129,6 +150,10 @@ static void arena_cam_stamp(void) {
     f32 ax = arena_export_cam_at_x();
     f32 ay = arena_export_cam_at_y();
     f32 az = arena_export_cam_at_z();
+    /* Distance comes from native so it can be swept with the ARENA_CAM_DIST env
+     * var at runtime; the header constant is still the default and the shipped
+     * value. Framing was a full patch rebuild per trial before this. */
+    f32 dist = arena_export_cam_dist();
 
     gView.at.x  = ax;
     gView.at.y  = ay;
@@ -136,7 +161,7 @@ static void arena_cam_stamp(void) {
     gView.rot.x = ARENA_CAM_PITCH_DEG;   /* pitch; the game's own was 20deg     */
     gView.rot.y = ARENA_CAM_YAW_DEG;     /* the value that MUST stay fixed      */
     gView.rot.z = 0.0f;
-    gView.dist  = ARENA_CAM_DIST;
+    gView.dist  = dist;
 
     /* eye/up written EXPLICITLY. func_8001994C would derive them from the above
      * (decomp src/boot/17930.c:605), but it is gated on D_8016E134 == 0 and that
@@ -149,9 +174,9 @@ static void arena_cam_stamp(void) {
      *   eye = at + dist * (cos(yaw+90)*cos(pitch), sin(pitch), sin(yaw+90)*cos(pitch))
      * At yaw 0 that is at + (0, dist*sin(pitch), dist*cos(pitch)) — +Z and above,
      * which puts the arena's long axis horizontal. */
-    gView.eye.x = ax + ARENA_CAM_DIST * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
-    gView.eye.y = ay + ARENA_CAM_DIST * ARENA_CAM_SIN_PITCH;
-    gView.eye.z = az + ARENA_CAM_DIST * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.eye.x = ax + dist * ARENA_CAM_COS_YAW_EFF * ARENA_CAM_COS_PITCH;
+    gView.eye.y = ay + dist * ARENA_CAM_SIN_PITCH;
+    gView.eye.z = az + dist * ARENA_CAM_SIN_YAW_EFF * ARENA_CAM_COS_PITCH;
     gView.up.x  = 0.0f;
     gView.up.y  = 1.0f;   /* pitch 60 is < 90, so the game's rule gives +1 */
     gView.up.z  = 0.0f;
@@ -292,7 +317,7 @@ void arena_render_routine(void) {
         if (!arena_export_puppet_ready() && arena_export_draw_gate()) {
             union { f32 f; u32 u; } cx, cy, cz;
             cx.f = gPlayerObject->Pos.x; cy.f = gPlayerObject->Pos.y; cz.f = gPlayerObject->Pos.z;
-            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u);
+            arena_export_puppet_capture((s32)cx.u, (s32)cy.u, (s32)cz.u, gCurrentLevel);
         }
         if (arena_export_puppet_ready()) {
             gPlayerObject->Pos.x = arena_export_puppet_wx(0);   /* absolute sim pos (no co-drive) */
@@ -535,6 +560,35 @@ void arena_render_routine(void) {
             for (; aj < 4; aj++) {
                 s32 slot = arena_export_blastactor_get_slot(aj);
                 if (slot >= 0) gObjects[slot].actionState = ACTION_NONE;
+            }
+        }
+
+        /* A1.2g FLOOR RASTER (probe mode 7 only; native gates it). Walk a grid
+         * over the arena asking the game's own ground query where the floor is,
+         * so ONE run maps the whole floor. This replaces walking the player into
+         * the edge, which can only ever find one boundary point and then stalls
+         * (the guard parks the player right there).
+         *
+         * Runs LAST in the frame, after func_80024744 and every object update,
+         * because func_80078168 overwrites the shared collision-result globals -
+         * nothing in this frame reads them after this point.
+         *
+         * The per-frame budget is a literal, not a native counter, so the patch
+         * stays stateless. 384/frame covers the default 81x81 survey in ~17
+         * frames and a full 201x201 edge-refinement pass in ~105. */
+        if (arena_export_floor_raster_active()) {
+            s32 n;
+            for (n = 0; n < 384; n++) {
+                if (!arena_export_floor_raster_next()) break;
+                func_80078168(arena_export_floor_raster_px(),
+                              arena_export_floor_raster_py(),
+                              arena_export_floor_raster_pz());
+                {
+                    s32 sel = GQ_SEL;
+                    union { f32 f; s32 i; } h;
+                    h.f = GQ_H[sel];
+                    arena_export_floor_raster_report(sel, h.i);
+                }
             }
         }
     }

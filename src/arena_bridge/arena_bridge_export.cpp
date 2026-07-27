@@ -78,7 +78,7 @@ extern "C" void arena_export_puppet_capture(uint8_t* rdram, recomp_context* ctx)
     uint32_t bx = _arg<0, uint32_t>(rdram, ctx);
     uint32_t by = _arg<1, uint32_t>(rdram, ctx);
     uint32_t bz = _arg<2, uint32_t>(rdram, ctx);
-    arena_puppet_capture(bx, by, bz);
+    arena_puppet_capture(bx, by, bz, _arg<3, int>(rdram, ctx));
 }
 extern "C" void arena_export_puppet_ready(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_puppet_ready());
@@ -199,6 +199,17 @@ extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void arena_export_floor_last_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_last_y()); }
 extern "C" void arena_export_floor_last_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_last_z()); }
 
+/* A1.2g floor raster (probe mode 7). */
+extern "C" void arena_export_floor_raster_active(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_floor_raster_active()); }
+extern "C" void arena_export_floor_raster_next(uint8_t* rdram, recomp_context* ctx)   { (void)rdram; _return(ctx, arena_floor_raster_next()); }
+extern "C" void arena_export_floor_raster_px(uint8_t* rdram, recomp_context* ctx)     { (void)rdram; _return(ctx, arena_floor_raster_px()); }
+extern "C" void arena_export_floor_raster_py(uint8_t* rdram, recomp_context* ctx)     { (void)rdram; _return(ctx, arena_floor_raster_py()); }
+extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx)     { (void)rdram; _return(ctx, arena_floor_raster_pz()); }
+extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx) {
+    arena_floor_raster_report(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx));
+}
+
+extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_dist()); }
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_x()); }
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }

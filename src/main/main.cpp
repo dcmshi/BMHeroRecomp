@@ -90,6 +90,13 @@ extern "C" void arena_export_floor_guard(uint8_t* rdram, recomp_context* ctx);  
 extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_floor_last_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_floor_last_z(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_active(uint8_t* rdram, recomp_context* ctx);  // A1.2g floor raster
+extern "C" void arena_export_floor_raster_next(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_px(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_py(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_pz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_floor_raster_report(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_cam_dist(uint8_t* rdram, recomp_context* ctx);      // A1.5 framing distance
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx);       // A1.5 arena centre
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
@@ -627,7 +634,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
-        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6');   /* 3=facing 4=anim 5=arena-measure 6=camera */
+        return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster */
     }();
     if (soak_active && ok && controller_num == 0) {
         if (!arena_routine_seen()) {
@@ -719,7 +726,7 @@ static void soak_launcher_update(recompui::LauncherMenu *menu) {
     static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6') && !fired && ++frames >= 60) {
+    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7') && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;
@@ -960,6 +967,13 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_floor_last_x);
     REGISTER_FUNC(arena_export_floor_last_y);
     REGISTER_FUNC(arena_export_floor_last_z);
+    REGISTER_FUNC(arena_export_floor_raster_active);
+    REGISTER_FUNC(arena_export_floor_raster_next);
+    REGISTER_FUNC(arena_export_floor_raster_px);
+    REGISTER_FUNC(arena_export_floor_raster_py);
+    REGISTER_FUNC(arena_export_floor_raster_pz);
+    REGISTER_FUNC(arena_export_floor_raster_report);
+    REGISTER_FUNC(arena_export_cam_dist);
     REGISTER_FUNC(arena_export_cam_at_x);
     REGISTER_FUNC(arena_export_cam_at_y);
     REGISTER_FUNC(arena_export_cam_at_z);

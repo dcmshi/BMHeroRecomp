@@ -88,3 +88,8 @@ arena_bridge.log
 # A1.2b: local cmake build tree + runtime logs
 build-cmake/
 arena_bridge.log
+
+# Agent verification artifacts: build output, probe screenshots, bridge log.
+build-rwdi/
+tools/*.png
+arena_bridge.log

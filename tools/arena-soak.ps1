@@ -6,7 +6,8 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools\arena-soak.ps1 -N 10
 param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
-      [string]$Expect = "", [string]$Rising = "", [string]$Constant = "", [int]$Mode = 0)
+      [string]$Expect = "", [string]$Rising = "", [string]$Constant = "",
+      [string]$Absent = "", [int]$Mode = 0)
 # -Probe: single run in ARENA_AUTO_BATTLE=3 (in-level stick-up + hold-L
 # injection for the camera forensics); dwells after PASS so the injected
 # samples land in the log before the kill.
@@ -24,6 +25,12 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 #                     first capture group must be IDENTICAL every time. For
 #                     values where CHANGE is the bug — the A1.5 fixed camera's
 #                     yaw being the motivating case.
+# -Absent '<regex>' : fail IF the pattern appears. For "this must never happen"
+#                     conditions that are silent when healthy — the floor
+#                     guard firing being the motivating case (it means the sim
+#                     drove the player off the rendered floor again, 8.5a).
+#                     Note this passes vacuously if the run never got in-arena,
+#                     so pair it with a mode that also logs something positive.
 # -Mode <n>         : ARENA_AUTO_BATTLE value (default 1; 3 for -Probe, 4 for
 #                     -AnimProbe).
 #
@@ -32,7 +39,7 @@ if ($AnimProbe -and -not $Rising) { $Rising = 'idx=29 frame=(\d+)' }
 if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
 if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
 if ($Mode -eq 0) { $Mode = 1 }
-if ($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant) { $N = 1 }
+if ($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant -or $Absent) { $N = 1 }
 
 $root  = Split-Path $PSScriptRoot -Parent
 $exe   = Join-Path $root "build-rwdi\BMHeroRecompiled.exe"
@@ -69,7 +76,7 @@ for ($i = 1; $i -le $N; $i++) {
         }
     }
     $secs = [int]$sw.Elapsed.TotalSeconds
-    if (($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant) -and $verdict -eq "PASS") {
+    if (($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant -or $Absent) -and $verdict -eq "PASS") {
         Start-Sleep -Seconds 10   # let the injected input sample land in the log
     }
     Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -85,6 +92,16 @@ if ($Expect) {
     $hit = (Test-Path $log) -and (Select-String -Path $log -Pattern $Expect -Quiet)
     Write-Host ("EXPECT GATE: /{0}/ -> {1}" -f $Expect, $(if ($hit) { 'PASS' } else { 'FAIL' }))
     if (-not $hit) { $fails++ }
+}
+
+if ($Absent) {
+    # Inverse of -Expect: the pattern must NOT be in the log.
+    $bad = @()
+    if (Test-Path $log) { $bad = @(Select-String -Path $log -Pattern $Absent) }
+    Write-Host ("ABSENT GATE: /{0}/ -> {1} ({2} match(es))" -f
+        $Absent, $(if ($bad.Count -eq 0) { 'PASS' } else { 'FAIL' }), $bad.Count)
+    foreach ($b in $bad | Select-Object -First 5) { Write-Host ("    " + $b.Line.Trim()) }
+    if ($bad.Count -gt 0) { $fails++ }
 }
 
 if ($Rising) {

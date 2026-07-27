@@ -7,6 +7,11 @@
 #include <stdio.h>
 #include <math.h>
 #include "../patches/arena_cam.h"
+/* The SIM's geometry, straight from the submodule. Including it here is the
+ * point: it makes invariant 8.5a (the sim's collidable bounds must track the
+ * rendered map) a compile-and-run check across the two repos instead of a note
+ * that nobody re-reads. arena_geom.h is header-only, integer-only Q20.12. */
+#include "../lib/bmhero-arena/src/arena/arena_geom.h"
 
 static int failures = 0;
 #define CHECK(c, ...) do { if(!(c)){ failures++; printf("FAIL: " __VA_ARGS__); printf("\n"); } } while(0)
@@ -91,6 +96,42 @@ int main(void) {
     CHECK(fabs(len - ARENA_CAM_DIST) < 1e-2,
           "eye offset length %.3f != ARENA_CAM_DIST %.3f", len, (double)ARENA_CAM_DIST);
     CHECK(ARENA_CAM_DIST > 0.0f, "ARENA_CAM_DIST must be positive");
+
+    /* ---- ASSUMPTION 6: the SIM's arena matches the MEASURED floor (8.5a). ----
+     * This is the invariant the A1.2g fall came from violating. The sim's bounds
+     * and the rendered floor are edited in two different repos, so nothing but a
+     * test keeps them together: change arena_geom.h without re-measuring, or
+     * re-measure without updating the sim, and the player walks off the world
+     * again (the game's ground query returns its no-floor sentinel and the
+     * player hangs off-map). Tolerance is one raster step (10 Hero units) - the
+     * resolution the floor was actually measured at, so we can't claim better. */
+    const double sim_half_x = (double)arena_nitros_standin.half_x / 4096.0;
+    const double sim_half_z = (double)arena_nitros_standin.half_z / 4096.0;
+    const double want       = (double)ARENA_FLOOR_HALF / (double)ARENA_RENDER_SCALE;
+    CHECK(fabs(sim_half_x * ARENA_RENDER_SCALE - ARENA_FLOOR_HALF) <= 10.0,
+          "sim half_x %.4f u = %.1f Hero, but the measured floor half is %.1f - "
+          "sim bounds and rendered map have drifted apart (8.5a)",
+          sim_half_x, sim_half_x * ARENA_RENDER_SCALE, (double)ARENA_FLOOR_HALF);
+    CHECK(fabs(sim_half_z * ARENA_RENDER_SCALE - ARENA_FLOOR_HALF) <= 10.0,
+          "sim half_z %.4f u = %.1f Hero, but the measured floor half is %.1f - "
+          "sim bounds and rendered map have drifted apart (8.5a)",
+          sim_half_z, sim_half_z * ARENA_RENDER_SCALE, (double)ARENA_FLOOR_HALF);
+    CHECK(fabs(sim_half_x - sim_half_z) < 1e-3,
+          "the measured floor is SQUARE, so the sim's arena must be too "
+          "(half_x %.4f vs half_z %.4f)", sim_half_x, sim_half_z);
+    /* Every spawn must be inside the floor, or a player starts off the map. */
+    for (int i = 0; i < 4; i++) {
+        double sx = (double)arena_nitros_standin.spawns[i].x / 4096.0;
+        double sz = (double)arena_nitros_standin.spawns[i].z / 4096.0;
+        CHECK(fabs(sx) < want && fabs(sz) < want,
+              "spawn %d at (%.3f,%.3f) is outside the measured floor (half %.4f u)",
+              i, sx, sz, want);
+    }
+    /* The camera must actually be able to frame the floor it is aimed at. */
+    CHECK(ARENA_CAM_DIST > 2.0f * ARENA_FLOOR_HALF * ARENA_CAM_SIN_PITCH * 0.75f,
+          "ARENA_CAM_DIST %.0f is too short to frame a %.0f-deep floor at pitch "
+          "%.0f", (double)ARENA_CAM_DIST, 2.0 * ARENA_FLOOR_HALF,
+          (double)ARENA_CAM_PITCH_DEG);
 
     if (!failures) { printf("ALL CAMERA POSE TESTS PASSED\n"); return 0; }
     printf("%d FAILURE(S)\n", failures); return 1;

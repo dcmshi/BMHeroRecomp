@@ -24,9 +24,11 @@ namespace {
      * position each frame (never teleports), so it moves per our physics
      * while the game keeps it grounded and the camera follows smoothly.
      * TODO(feel): scale tuned on-screen. */
-    float g_scale = 120.0f;    /* Hero units per sim unit */
-    float g_scale_z = 120.0f;  /* symmetric with X; forward/back feel is a
-                                * known camera-relative item for the feel pass */
+    /* ONE source of truth for the scale: arena_cam.h, which is also what the sim's
+     * arena_geom.h half-extents are derived from and what test_arena_cam.c checks
+     * them against. A local literal here could drift from the sim silently. */
+    float g_scale   = ARENA_RENDER_SCALE;   /* Hero units per sim unit */
+    float g_scale_z = ARENA_RENDER_SCALE;   /* square arena -> same on both axes */
     float g_render_dx = 0.0f;  /* last tick's displacement, scaled */
     float g_render_dz = 0.0f;
     float g_render_yaw = 0.0f;
@@ -37,6 +39,7 @@ namespace {
      * would mirror). g_ref_s* is player 0's sim pos at capture. */
     bool  g_puppets_ready = false;
     float g_origin_x = 0.0f, g_origin_y = 0.0f, g_origin_z = 0.0f;  /* frozen world anchor */
+    int   g_level_at_capture = -1;   /* gCurrentLevel when the anchor was taken */
     float g_ref_sx = 0.0f, g_ref_sy = 0.0f, g_ref_sz = 0.0f;         /* frozen sim ref (p0) */
     int   g_puppet_slot[ARENA_MAX_PLAYERS] = { -1, -1, -1, -1 };
     /* A1.2c: 16 bomb actors, 1:1 with g_state.bombs[0..15]. */
@@ -237,18 +240,52 @@ extern "C" void arena_bridge_set_battle_mode(int on) {
 /* A1.2b: freeze the world anchor (the player's spawn-frame Pos, passed as u32
  * bit patterns to dodge float-arg ABI) and the sim reference (player 0's sim
  * pos now). Idempotent — only the first call takes effect. */
-extern "C" void arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz) {
+extern "C" void arena_puppet_capture(uint32_t bx, uint32_t by, uint32_t bz, int level) {
     if (g_puppets_ready) return;
     union { uint32_t u; float f; } ux, uy, uz;
     ux.u = bx; uy.u = by; uz.u = bz;
-    g_origin_x = ux.f; g_origin_y = uy.f; g_origin_z = uz.f;
-    g_ref_sx = qf(g_state.players[0].pos.x);
-    g_ref_sy = qf(g_state.players[0].pos.y);   /* A1.2c: bomb arc height reference */
-    g_ref_sz = qf(g_state.players[0].pos.z);
+
+    /* A1.2g ANCHOR FIX (2026-07-26). The frame is now pinned to the MEASURED
+     * floor, not to wherever the player happened to be standing:
+     *
+     *     hero = FLOOR_CENTRE + sim * scale        (ref_s = the sim's centre, 0)
+     *
+     * The old form anchored the player's spawn Pos to the sim's SPAWN, which put
+     * the sim's arena CENTRE at Hero (906,422) instead of (0,0) - measured, from
+     * the same run that produced the floor map: origin(0,240,0), ref_s(-7.55,
+     * -3.52). The sim's x range then mapped to Hero [-42,1854] against a floor of
+     * [-950,950], so more than half the arena hung over the edge. THAT is the
+     * A1.2g "fall": the player was driven off the floor polygon and the ground
+     * query returned its no-floor sentinel. It also explains why the coarse walk
+     * probe only ever saw x in [0..353], and why raising ARENA_CAM_DIST pushed
+     * the arena off-centre instead of just framing more of it.
+     *
+     * Anchoring on measured constants also removes the per-run drift the capture
+     * had by construction (origin.z logged as 0 one boot and 171 the next) - the
+     * floor does not move between boots, but the player's spawn did.
+     *
+     * The captured Pos is still logged, as a CHECK: if it stops sitting on the
+     * measured floor centre, either the map changed or the warp landed somewhere
+     * else, and that should be visible rather than silently absorbed. */
+    g_origin_x = ARENA_FLOOR_CX;
+    g_origin_y = ARENA_FLOOR_Y;
+    g_origin_z = ARENA_FLOOR_CZ;
+    g_ref_sx = 0.0f;   /* sim arena centre <-> measured floor centre */
+    g_ref_sy = 0.0f;   /* sim ground (y=0)  <-> measured floor height */
+    g_ref_sz = 0.0f;
+    g_level_at_capture = level;
     g_puppets_ready = true;
     if (g_log) {
-        std::fprintf(g_log, "[capture] origin(%.2f,%.2f,%.2f) ref_s(%.2f,%.2f)\n",
-                     g_origin_x, g_origin_y, g_origin_z, g_ref_sx, g_ref_sz);
+        /* gCurrentLevel is logged because a floor measurement that doesn't record
+         * WHICH MAP it measured is a trap: the render routine runs in every level,
+         * so [capture] fires wherever the draw gate happens to open — including
+         * the stage-select map if the arena warp hasn't landed yet. Anything
+         * derived from these coordinates is only valid for level ARENA_WARP_MAP. */
+        std::fprintf(g_log,
+            "[capture] level=%d anchor origin(%.2f,%.2f,%.2f) ref_s(0,0,0) scale=%.1f | "
+            "player was at (%.2f,%.2f,%.2f) d=(%.2f,%.2f)\n",
+            level, g_origin_x, g_origin_y, g_origin_z, g_scale,
+            ux.f, uy.f, uz.f, ux.f - ARENA_FLOOR_CX, uz.f - ARENA_FLOOR_CZ);
         std::fflush(g_log);
     }
 }
@@ -424,6 +461,22 @@ extern "C" float arena_cam_at_x(void) { return g_origin_x + (0.0f - g_ref_sx) * 
 extern "C" float arena_cam_at_z(void) { return g_origin_z + (0.0f - g_ref_sz) * g_scale_z; }
 extern "C" float arena_cam_at_y(void) { return g_origin_y + ARENA_CAM_AT_Y_LIFT; }
 
+/* Camera distance, overridable at runtime with ARENA_CAM_DIST. arena_cam.h says
+ * this value "is iterated by screenshot" — but it lives in a PATCH header, so
+ * every trial was a full patch rebuild. Reading it here makes framing a
+ * relaunch-and-look loop instead, and it doubles as the cheapest possible test
+ * of whether our gView write drives the picture at all: if the render doesn't
+ * move when this changes, something downstream is ignoring the pose. The
+ * compile-time constant remains the default and the shipped value. */
+extern "C" float arena_cam_dist(void) {
+    static const float d = []() {
+        const char* v = std::getenv("ARENA_CAM_DIST");
+        if (v) { float f = (float)std::atof(v); if (f > 0.0f) return f; }
+        return (float)ARENA_CAM_DIST;
+    }();
+    return d;
+}
+
 /* ---- A1.2g floor guard ---------------------------------------------------
  * The arena's floor polygon is SMALLER than the sim's collidable bounds, so the
  * sim can walk player 0 off the edge. When that happens the game's ground query
@@ -454,11 +507,181 @@ extern "C" int arena_floor_guard(int xbits, int ybits, int zbits) {
         g_floor_x = x; g_floor_y = y; g_floor_z = z;
         return 0;                       /* nothing to correct */
     }
+    /* Since the 2026-07-26 anchor fix the sim's arena maps exactly onto the
+     * measured floor, so this must NEVER fire. Say so loudly the first time it
+     * does: a silent crutch would hide a real regression in the very invariant
+     * (8.5a) this whole slice exists to establish. Kept as containment so a
+     * regression is a log line rather than a player falling out of the world. */
+    if (g_floor_ok) {
+        static bool warned = false;
+        if (!warned && g_log) {
+            warned = true;
+            std::fprintf(g_log,
+                "[floor] *** GUARD FIRED at (%.1f,%.1f) - the sim drove the player "
+                "OFF the measured floor (half %.0f). Sim bounds and rendered map "
+                "have drifted apart again (8.5a).\n",
+                g_floor_x, g_floor_z, (double)ARENA_FLOOR_HALF);
+            std::fflush(g_log);
+        }
+    }
     return g_floor_ok ? 1 : 0;          /* 1 = off-map, restore last good */
 }
 extern "C" float arena_floor_last_x(void) { return g_floor_x; }
 extern "C" float arena_floor_last_y(void) { return g_floor_y; }
 extern "C" float arena_floor_last_z(void) { return g_floor_z; }
+
+/* ---- A1.2g floor RASTER (ARENA_AUTO_BATTLE=7) ----------------------------
+ * The keystone measurement for section 8.5a (the sim's collidable bounds must
+ * track the RENDERED map). We never had a map of the real floor - only the
+ * sliver a walking player happened to cover, because a walk stalls at the first
+ * edge it finds and the guard then parks it there.
+ *
+ * So stop walking and ask the geometry directly. func_80078168(x,y,z) is the
+ * game's OWN ground query (decomp src/code/69AA0.c:205 - a pure position-driven
+ * chain, no caller context). After it returns:
+ *     i = D_801776E0 & 1;   h = D_80177760[i];
+ * and the game's own test for "no floor here" is  i == 0 && h == -30000.0f
+ * (69AA0.c:401 - the branch that leaves the object's ground height unset). We
+ * copy that rule verbatim rather than inventing a threshold, and h is the
+ * ground height everywhere else.
+ *
+ * One run maps the whole floor, and because it needs no player movement there
+ * is nothing for an edge to stall.
+ *
+ * Coordinates are ABSOLUTE Hero world units. The box is centred on the captured
+ * spawn origin only because that is a point known to be ON the floor; the
+ * reported extent is absolute, so it stays comparable across runs even though
+ * the capture origin itself drifts (observed: origin.z 0 one boot, 171 the
+ * next). A hit on the box border means the box was too small - flagged, not
+ * silently truncated. */
+namespace {
+    /* Grid is env-tunable so a coarse survey and a fine edge-refinement pass are
+     * the same probe, no rebuild between them:
+     *     ARENA_RASTER_N     samples per axis (odd -> the centre is sampled)
+     *     ARENA_RASTER_STEP  Hero units between samples
+     * Defaults survey +-2000 at 50u. FR_MAX caps the static map. */
+    constexpr int FR_MAX  = 201;
+    int   FR_N    = 81;
+    float FR_STEP = 50.0f;
+
+    bool  fr_checked = false, fr_armed = false;
+    bool  fr_started = false, fr_done = false;
+    int   fr_cursor = 0;                 /* linear index; ONLY arena_floor_raster_report advances it */
+    float fr_x0 = 0.0f, fr_z0 = 0.0f, fr_y = 0.0f;   /* box corner + probe height */
+    float fr_px = 0.0f, fr_pz = 0.0f;                /* the point the patch must query now */
+    unsigned char fr_hit[FR_MAX * FR_MAX];
+    float fr_minx = 0, fr_maxx = 0, fr_minz = 0, fr_maxz = 0, fr_minh = 0, fr_maxh = 0;
+    long  fr_hits = 0;
+
+    void fr_finish() {
+        fr_done = true;
+        if (!g_log) return;
+        if (fr_hits == 0) {
+            std::fprintf(g_log, "[raster] NO FLOOR FOUND in %dx%d box around origin "
+                                "(%.1f,%.1f) step %.0f - probe height or box is wrong\n",
+                         FR_N, FR_N, (double)(fr_x0 + FR_STEP * (FR_N / 2)),
+                         (double)(fr_z0 + FR_STEP * (FR_N / 2)), (double)FR_STEP);
+            std::fflush(g_log);
+            return;
+        }
+        /* A hit on the border means the floor continues past the box. */
+        bool edge = false;
+        for (int i = 0; i < FR_N; i++) {
+            if (fr_hit[i] || fr_hit[(FR_N - 1) * FR_N + i] ||
+                fr_hit[i * FR_N] || fr_hit[i * FR_N + FR_N - 1]) edge = true;
+        }
+        std::fprintf(g_log,
+            "[raster] DONE  level=%d samples=%d hits=%ld step=%.0f\n"
+            "[raster] x=[%.1f..%.1f] z=[%.1f..%.1f]\n"
+            "[raster] centre=(%.1f,%.1f) span=(%.1f x %.1f) half=(%.1f x %.1f)\n"
+            "[raster] ground h=[%.1f..%.1f]%s\n",
+            g_level_at_capture, FR_N * FR_N, fr_hits, (double)FR_STEP,
+            (double)fr_minx, (double)fr_maxx, (double)fr_minz, (double)fr_maxz,
+            (double)((fr_minx + fr_maxx) * 0.5f), (double)((fr_minz + fr_maxz) * 0.5f),
+            (double)(fr_maxx - fr_minx), (double)(fr_maxz - fr_minz),
+            (double)((fr_maxx - fr_minx) * 0.5f), (double)((fr_maxz - fr_minz) * 0.5f),
+            (double)fr_minh, (double)fr_maxh,
+            edge ? "   *** EDGE-SATURATED: floor continues past the box, widen FR_N ***" : "");
+        /* ASCII map: one row per z, x increasing left to right. Reading the SHAPE
+         * matters as much as the extent - a bounding box is only the right model
+         * if the floor is actually a filled rectangle. */
+        std::fprintf(g_log, "[raster] map (rows = z ascending, cols = x ascending, '#' = floor)\n");
+        for (int iz = 0; iz < FR_N; iz++) {
+            char row[FR_MAX + 1];   /* FR_N is runtime now - no VLA */
+            for (int ix = 0; ix < FR_N; ix++) row[ix] = fr_hit[iz * FR_N + ix] ? '#' : '.';
+            row[FR_N] = '\0';
+            std::fprintf(g_log, "[raster] z=%8.1f %s\n", (double)(fr_z0 + FR_STEP * iz), row);
+        }
+        std::fflush(g_log);
+    }
+}
+
+extern "C" int arena_floor_raster_active(void) {
+    if (!fr_checked) {
+        const char* m = std::getenv("ARENA_AUTO_BATTLE");
+        fr_armed = (m != nullptr && std::atoi(m) == 7);
+        fr_checked = true;
+    }
+    if (!fr_armed || fr_done) return 0;
+    if (!g_puppets_ready) return 0;      /* need the origin, i.e. a settled level */
+    if (!fr_started) {
+        if (const char* n = std::getenv("ARENA_RASTER_N")) {
+            int v = std::atoi(n);
+            if (v >= 3 && v <= FR_MAX) FR_N = (v % 2) ? v : v - 1;   /* keep it odd */
+        }
+        if (const char* s = std::getenv("ARENA_RASTER_STEP")) {
+            float v = (float)std::atof(s);
+            if (v > 0.0f) FR_STEP = v;
+        }
+        fr_x0 = g_origin_x - FR_STEP * (FR_N / 2);
+        fr_z0 = g_origin_z - FR_STEP * (FR_N / 2);
+        fr_y  = g_origin_y;              /* a height known to be on the floor */
+        std::memset(fr_hit, 0, sizeof fr_hit);
+        fr_started = true;
+        if (g_log) {
+            std::fprintf(g_log, "[raster] START level=%d centre=(%.1f,%.1f) y=%.1f "
+                                "%dx%d step=%.0f\n",
+                         g_level_at_capture, (double)g_origin_x, (double)g_origin_z,
+                         (double)fr_y, FR_N, FR_N, (double)FR_STEP);
+            std::fflush(g_log);
+        }
+    }
+    return 1;
+}
+
+extern "C" int arena_floor_raster_next(void) {
+    if (!fr_started || fr_done) return 0;
+    if (fr_cursor >= FR_N * FR_N) { fr_finish(); return 0; }
+    fr_px = fr_x0 + FR_STEP * (fr_cursor % FR_N);
+    fr_pz = fr_z0 + FR_STEP * (fr_cursor / FR_N);
+    return 1;
+}
+extern "C" float arena_floor_raster_px(void) { return fr_px; }
+extern "C" float arena_floor_raster_pz(void) { return fr_pz; }
+extern "C" float arena_floor_raster_py(void) { return fr_y; }
+
+/* sel = D_801776E0 & 1, hbits = D_80177760[sel] as a bit pattern (no float args
+ * over the export ABI). Advancing the cursor HERE, not in _next, keeps the point
+ * and the answer in lockstep no matter how the patch batches its loop. */
+extern "C" void arena_floor_raster_report(int sel, int hbits) {
+    if (!fr_started || fr_done || fr_cursor >= FR_N * FR_N) return;
+    float h;
+    std::memcpy(&h, &hbits, sizeof h);
+    if (!(sel == 0 && h == -30000.0f)) {          /* the game's own "no floor" rule */
+        fr_hit[fr_cursor] = 1;
+        if (fr_hits == 0) {
+            fr_minx = fr_maxx = fr_px; fr_minz = fr_maxz = fr_pz; fr_minh = fr_maxh = h;
+        }
+        if (fr_px < fr_minx) fr_minx = fr_px;
+        if (fr_px > fr_maxx) fr_maxx = fr_px;
+        if (fr_pz < fr_minz) fr_minz = fr_pz;
+        if (fr_pz > fr_maxz) fr_maxz = fr_pz;
+        if (h < fr_minh) fr_minh = h;
+        if (h > fr_maxh) fr_maxh = h;
+        fr_hits++;
+    }
+    fr_cursor++;
+}
 
 /* A1.5 camera probe. The patch calls this every frame for 5 tags; the GATE and
  * THROTTLE live here, not in the patch, because patches must stay stateless (a

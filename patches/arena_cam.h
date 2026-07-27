@@ -17,9 +17,33 @@
 
 /* MUST stay 0. The game rotates the stick in place by gView.rot.y for
  * gCameraType in {1,2,5,6,7,8} (the arena is type 6, notes 8.11). Yaw 0 makes
- * that rotation the identity, so stick-up maps to a fixed world axis. It also
- * puts the arena's long axis (half_x 7.9 vs half_z 3.87) horizontal on screen. */
+ * that rotation the identity, so stick-up maps to a fixed world axis. (The old
+ * "and it puts the arena's long axis horizontal" rationale no longer applies:
+ * the measured floor is SQUARE — see ARENA_FLOOR_HALF below — so there is no
+ * long axis. Yaw 0 still stands on the input-mapping argument alone.) */
 #define ARENA_CAM_YAW_DEG      0.0f
+
+/* ---- MEASURED map geometry (probe mode 7, 2026-07-26) ---------------------
+ * The MAP_NITROS_1 floor, measured by asking the game's OWN ground query
+ * (func_80078168) on a grid — not by walking a player, which only ever measures
+ * how far the player could GO. Two independent passes (50-unit and 10-unit
+ * grids; 6,561 and 40,401 samples) agree on the extent exactly:
+ *
+ *     a filled SQUARE, x in [-950,950], z in [-950,950], flat at y = 240,
+ *     no holes, no pillars, no steps.
+ *
+ * These are the single source of truth for BOTH sides of invariant 8.5a:
+ *   - the render anchor: arena_bridge.cpp maps the sim's arena CENTRE onto
+ *     (ARENA_FLOOR_CX, ARENA_FLOOR_CZ), instead of anchoring on wherever the
+ *     player happened to spawn;
+ *   - the sim's collidable bounds: arena_geom.h half_x/half_z must equal
+ *     ARENA_FLOOR_HALF / ARENA_RENDER_SCALE.
+ * tools/test_arena_cam.c asserts those two agree — 8.5a as a test, not a note. */
+#define ARENA_FLOOR_CX       0.0f
+#define ARENA_FLOOR_CZ       0.0f
+#define ARENA_FLOOR_Y      240.0f
+#define ARENA_FLOOR_HALF   950.0f
+#define ARENA_RENDER_SCALE 120.0f   /* Hero units per sim unit (arena_bridge.cpp) */
 
 /* Precomputed trig - guarded by tools/test_arena_cam.c. */
 #define ARENA_CAM_SIN_PITCH   0.8660254f   /* sin(60) */
@@ -27,21 +51,42 @@
 #define ARENA_CAM_SIN_YAW     0.0f         /* sin(0)  */
 #define ARENA_CAM_COS_YAW     1.0f         /* cos(0)  */
 
-/* Hero world units. MEASURED, not guessed - we don't know the FOV, so the A1.5
- * probe (ARENA_AUTO_BATTLE=6) establishes the starting value and it is then
- * iterated by screenshot. The arena is 1896 x 928 Hero units
- * (2 * half_x/half_z * g_scale 120). */
-#define ARENA_CAM_DIST      2200.0f
+/* Hero world units, chosen by SCREENSHOT SWEEP (1200 / 1800 / 2800 / 4000 at
+ * ARENA_CAM_DIST, 2026-07-26), not derived - we don't know the FOV.
+ *
+ * 1800 frames the floor best of those tried. Override at runtime with the
+ * ARENA_CAM_DIST env var (arena_bridge.cpp arena_cam_dist) - no rebuild - so
+ * re-sweeping is cheap.
+ *
+ * OPEN, and the reason this isn't finished: the sweep proved our gView write
+ * DOES drive the picture (zoom tracks this value exactly), and the log confirms
+ * we leave gView.at at the measured floor centre (wrote_at=(0,340,0)) - but the
+ * rendered view is centred on the PLAYER, not on that point, and the player's
+ * screen position drifts systematically as this value changes. So pitch, yaw and
+ * dist are honoured while `at` is not, somewhere between our stamp and the draw.
+ * Until that is understood, this behaves as a fixed-ORIENTATION follow camera:
+ * it still delivers A1.5's actual goal (a stable yaw, so a held stick direction
+ * stops curving), but not a static whole-arena framing. */
+#define ARENA_CAM_DIST      1800.0f
 /* The game's own rail camera aims at y=340 with origin_y=240, i.e. 100 above the
  * floor anchor (measured, ARENA_AUTO_BATTLE=6). Matching that keeps the horizon
  * where the room was authored for. */
 #define ARENA_CAM_AT_Y_LIFT  100.0f
 
 /* ---------------------------------------------------------------------------
- * THE GAME DERIVES eye AND up ITSELF - we must NOT write them.
+ * WHO OWNS eye AND up.
+ *
+ * The DESIGN assumed the game derives them and we must not write them. That
+ * turned out to be wrong IN THIS ARENA, and the patch now writes eye/up itself
+ * (arena_render.c arena_cam_stamp) - the derivation below is gated on
+ * D_8016E134 == 0 and that gate is closed here. The evidence: with only
+ * at/rot/dist written, the picture was PIXEL-IDENTICAL across a 2x change of
+ * ARENA_CAM_DIST and the logged eye never left the rail camera's last value.
+ * The formula below is still exactly what we reproduce, so it stays documented
+ * (and ASSUMPTION 4 in the host test still guards our trig against it).
  *
  * func_8001994C (decomp src/boot/17930.c:605, recovered via tools/decomp-func.ps1)
- * recomputes them every frame from at + rot + dist, gated on D_8016E134 == 0:
+ * computes, from at + rot + dist:
  *
  *     view_rot_y = gView.rot.y + 90.0f;          <-- NOTE THE +90 OFFSET
  *     eye.x = dist * cos(view_rot_y) * cos(rot.x) + at.x;
@@ -49,14 +94,10 @@
  *     eye.z = dist * sin(view_rot_y) * cos(rot.x) + at.z;
  *     up.y  = (rot.x >= 90 && rot.x < 270) ? -1 : +1;
  *
- * So the patch writes ONLY at / rot.x / rot.y / dist and lets the game finish
- * the job - self-consistent with its own conventions, and nothing to fight.
- *
  * Consequences of the +90 offset, at our yaw of 0:
  *   effective yaw = 90  =>  cos = 0, sin = 1
  *   => eye.x = at.x            (no lateral offset)
  *   => eye.z = at.z + dist*cos(pitch)   (camera sits at +Z, looking back at -Z)
- * which puts the arena's LONG axis (X) horizontal on screen, as intended.
  * There is no Z_SIGN constant to guess - the game's formula settles it.
  *
  * The game also guards the gimbal (rot.x of exactly 90 or 270 is nudged by 1),
