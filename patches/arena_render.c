@@ -225,6 +225,7 @@ extern void (*gDebugRoutine2)(void);
  * suppresses that arena's boss. Full RE: integration notes §8. Actors are bomb
  * placeholders; real bomber models are a follow-up (skeletal, see above). */
 void arena_render_routine(void) {
+    u16 held_buttons;
     /* A1.2g - SUPPRESS THE ROOM'S OWN DAMAGE. In battle the SIM owns every hit
      * and every hit point; the game object is a puppet, so any damage the room
      * lands on it is by definition wrong. It is also dangerous: the bypassed
@@ -291,6 +292,13 @@ void arena_render_routine(void) {
          * non-actor [14..77] objects. Game effects turned out NOT to live in
          * this range (their draw ran with the sweep off), so this is safe. */
         s32 k;
+        /* The game's OWN bomb pool is gObjects[2..5] (Get_InactiveObject,
+         * 69AA0.c) - below the [14..77] range this sweep was built for, so it
+         * was never suppressed. Belt and braces alongside the button mask above:
+         * anything spawned before the mask takes effect gets cleaned up rather
+         * than sitting on the floor as an inert bomb that never explodes. */
+        for (k = 2; k < 6; k++)
+            gObjects[k].actionState = ACTION_NONE;
         for (k = 14; k < 78; k++) {
             if (!arena_export_is_actor_slot(k))
                 gObjects[k].actionState = ACTION_NONE;
@@ -324,6 +332,27 @@ void arena_render_routine(void) {
          * symptom to read than a wrong pose. Let the game finish the job. */
         arena_cam_stamp();   /* pre-update: the stick rotation reads rot.y */
     }
+
+    /* TAKE THE BUTTONS AWAY FROM THE GAME'S PLAYER (battle only).
+     *
+     * gPlayerObject is meant to be a PUPPET: we own its position, its facing and
+     * its animations. But its own action logic still ran, and it still read the
+     * controller - so every press was acted on TWICE. Three symptoms from the
+     * 2026-07-27 feel test, one cause:
+     *   - "throwing seems to throw two bombs, one explodes and one does not" -
+     *     ours (sim, drawn from gObjects[14..77]) plus the GAME'S own, which
+     *     Get_InactiveObject puts in gObjects[2..5] (decomp 69AA0.c). That range
+     *     is BELOW our suppression sweep, so it was never touched; and it never
+     *     detonates because its fuse logic depends on game state we bypass.
+     *   - "placing bomb with Q plays the throw animation instead of the set
+     *     animation" - the game's own throw animation, fighting our A1.4 pose.
+     *   - throwing while the SIM player is dead - the game object has no idea.
+     *
+     * The STICK is deliberately left alone: func_80024744 turns it into
+     * gPlayerObject->moveAngle, which we copy for facing. Only the buttons go.
+     * Captured first, so the sim still sees the real presses below. */
+    held_buttons = gActiveContButton;
+    if (arena_bridge_is_battle()) gActiveContButton = 0;
 
     func_80024744();
 
@@ -412,9 +441,11 @@ void arena_render_routine(void) {
         if (sx < -31) sx = -31;
         if (sy >  31) sy =  31;
         if (sy < -31) sy = -31;
-        s32 jump = (gActiveContButton & CONT_A) ? 1 : 0;
-        s32 bomb = (gActiveContButton & CONT_B) ? 1 : 0;
-        s32 set  = (gActiveContButton & CONT_G) ? 1 : 0;   /* Z trigger / Q key */
+        /* held_buttons, not gActiveContButton: the live copy was zeroed above so
+         * the game's own player could not act on it. */
+        s32 jump = (held_buttons & CONT_A) ? 1 : 0;
+        s32 bomb = (held_buttons & CONT_B) ? 1 : 0;
+        s32 set  = (held_buttons & CONT_G) ? 1 : 0;   /* Z trigger / Q key */
         s32 buttons = jump | (bomb << 1) | (set << 2);
         arena_export_tick_input(sx, sy, buttons);
         /* A1.4 co-drive FIX (2026-07-24): capture the world origin + sim ref ONCE,
