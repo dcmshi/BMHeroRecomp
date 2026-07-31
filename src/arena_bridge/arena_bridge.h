@@ -98,6 +98,9 @@ int   arena_kick_anim_index(void); /* ARENA_KICK_ANIM; default 32 */
 int   arena_pose_anim(void);
 int   arena_cam_follow(void);      /* ARENA_CAM_FOLLOW=1: aim at the player */
 float arena_cam_pitch_deg(void);   /* ARENA_CAM_PITCH; trig computed natively */
+float arena_cam_yaw_deg(void);     /* ARENA_CAM_YAW; effective trig natively */
+float arena_cam_yaw_eff_sin(void); /* sin(yaw + 90deg) */
+float arena_cam_yaw_eff_cos(void); /* cos(yaw + 90deg) */
 float arena_cam_pitch_sin(void);
 float arena_cam_pitch_cos(void);
 int   arena_anim_sweep_index(void);/* ARENA_ANIM_SWEEP=<ticks>; -1 = off */

@@ -30,6 +30,12 @@ namespace {
      * them against. A local literal here could drift from the sim silently. */
     float g_scale   = ARENA_RENDER_SCALE;   /* Hero units per sim unit */
     float g_scale_z = ARENA_RENDER_SCALE;   /* square arena -> same on both axes */
+
+/* The bomb mesh's origin is its CENTER; the game's own bomb rests with it 30
+ * world units above the floor (69AA0.c:359). Applied to bomb AND blast wy so
+ * settled bombs sit ON the floor and the explosion spawns at bomb-centre
+ * height, exactly like the game's own detonation. */
+#define BOMB_MESH_REST_LIFT 30.0f
     float g_render_dx = 0.0f;  /* last tick's displacement, scaled */
     float g_render_dz = 0.0f;
     float g_render_yaw = 0.0f;
@@ -73,11 +79,26 @@ namespace {
     int g_anim_since_set = -1;
 
     /* ACTION POSE window. One mechanism for both set and kick: an action latches
-     * the index to play and a frame budget, and the patch re-asserts it while the
-     * budget lasts (the walker re-asserts its own anim every frame, so a
-     * one-shot trigger survives exactly one frame - §8.18). */
+     * the index to play and a frame budget; the patch triggers it once and the
+     * func_8001C0EC walker gate (§8.23) lets the clip play untouched for the
+     * window's duration. */
     int g_pose_anim   = -1;
     int g_pose_frames = 0;
+
+/* Window length in frames. Default 10 = clip 29's exact length (measured
+ * 2026-07-30: the frame counter wraps 18 -> 0 at +2/frame), so the game's own
+ * drop clip plays EXACTLY ONCE - the real game's drop is one snappy play-
+ * through, and the old 24-frame window looped it 2.4x ("doesn't move as fast
+ * as I remember", feel test 2026-07-30). ARENA_POSE_FRAMES overrides when
+ * experimenting with longer clips (41 needs ~24). */
+static int arena_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 10;
+    }();
+    return n;
+}
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -160,7 +181,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
             if (o == 0) {
                 g_anim_since_set = 0;           /* open the [animw] window */
                 g_pose_anim   = arena_set_anim_index();
-                g_pose_frames = 24;
+                g_pose_frames = arena_pose_frames();
             }
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
                 std::fprintf(g_log, "[setdbg] t%u bi=%d live=%d simY=%.3f wy=%.2f originY=%.2f slot=%d\n",
@@ -180,7 +201,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
             int kicker = (int)g_state.bombs[b].bounced - 1;
             if (kicker == 0) {
                 g_pose_anim   = arena_kick_anim_index();
-                g_pose_frames = 24;
+                g_pose_frames = arena_pose_frames();
                 if (g_log) {
                     std::fprintf(g_log, "[kick] pose idx=%d bomb=%d\n", g_pose_anim, b);
                     std::fflush(g_log);
@@ -390,14 +411,21 @@ extern "C" float arena_bomb_wx(int i) {
     return g_origin_x + (qf(g_state.bombs[i].pos.x) - g_ref_sx) * g_scale;
 }
 extern "C" float arena_bomb_wy(int i) {
-    if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y;
-    float w = g_origin_y + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
+    if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y + BOMB_MESH_REST_LIFT;
+    float w = g_origin_y + BOMB_MESH_REST_LIFT
+              + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
     /* A1.2e: floor-clamp. ref_sy is sampled at capture; any positive ref puts
      * ground bombs (sim y=0) BELOW the game floor — set bombs were invisible
      * while thrown bombs (arcing above) showed (user log 2026-07-22: Q presses
      * reached the sim, live=1..3, nothing on screen). origin_y = the grounded
-     * player height at capture = the floor. */
-    if (w < g_origin_y) w = g_origin_y;
+     * player height at capture = the floor (raster-confirmed 2026-07-30:
+     * ground h=[240..240] with origin_y 240).
+     *
+     * BOMB_MESH_REST_LIFT: the bomb mesh's origin is its CENTER, and the game's
+     * own bomb rests at floor + 30 (69AA0.c:359, `sp44 = D_80177760[1] + 30.0f`).
+     * Without the lift our settled bombs rendered half-sunk (feel test
+     * 2026-07-30: "the bomb appears slightly inside the floor"). */
+    if (w < g_origin_y + BOMB_MESH_REST_LIFT) w = g_origin_y + BOMB_MESH_REST_LIFT;
     return w;
 }
 extern "C" float arena_bomb_wz(int i) {
@@ -453,10 +481,11 @@ extern "C" float arena_blast_wx(int i) {
     return g_origin_x + (qf(g_state.blasts[i].center.x) - g_ref_sx) * g_scale;
 }
 extern "C" float arena_blast_wy(int i) {
-    if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_y;
-    float w = g_origin_y + (qf(g_state.blasts[i].center.y) - g_ref_sy) * g_scale;
-    if (w < g_origin_y) w = g_origin_y;   /* same floor-clamp as bombs */
-    return w;
+    if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_y + BOMB_MESH_REST_LIFT;
+    float w = g_origin_y + BOMB_MESH_REST_LIFT
+              + (qf(g_state.blasts[i].center.y) - g_ref_sy) * g_scale;
+    if (w < g_origin_y + BOMB_MESH_REST_LIFT) w = g_origin_y + BOMB_MESH_REST_LIFT;
+    return w;   /* explosion at bomb-CENTER height, like the game's own spawn */
 }
 extern "C" float arena_blast_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_BLASTS) return g_origin_z;
@@ -648,6 +677,34 @@ extern "C" float arena_cam_pitch_cos(void) {
     return v;
 }
 
+/* Camera YAW, overridable with ARENA_CAM_YAW (degrees; 0 = the shipped view
+ * from +Z). Exists for inspection shots — the 2026-07-30 pose review needed a
+ * 3/4 FRONT angle ("from the back it was a little hard to tell"). Same
+ * native-trig pattern as pitch: the patch must never emit a sinf/cosf libcall
+ * (notes 8.11), so the effective (yaw+90°) sin/cos cross the ABI as floats.
+ * Default reproduces ARENA_CAM_YAW_DEG / *_YAW_EFF exactly — play unchanged. */
+extern "C" float arena_cam_yaw_deg(void) {
+    static const float d = []() {
+        const char* v = std::getenv("ARENA_CAM_YAW");
+        if (v) {
+            float f = (float)std::atof(v);
+            if (f >= -360.0f && f <= 360.0f) return f;
+        }
+        return (float)ARENA_CAM_YAW_DEG;
+    }();
+    return d;
+}
+extern "C" float arena_cam_yaw_eff_sin(void) {
+    static const float v = std::sin((arena_cam_yaw_deg() + ARENA_CAM_YAW_OFFSET_DEG)
+                                    * 3.14159265358979f / 180.0f);
+    return v;
+}
+extern "C" float arena_cam_yaw_eff_cos(void) {
+    static const float v = std::cos((arena_cam_yaw_deg() + ARENA_CAM_YAW_OFFSET_DEG)
+                                    * 3.14159265358979f / 180.0f);
+    return v;
+}
+
 extern "C" int arena_cam_follow(void) {
     static const int on = []() {
         const char* v = std::getenv("ARENA_CAM_FOLLOW");
@@ -684,11 +741,18 @@ extern "C" int arena_anim_sweep_index(void) {
     return idx;
 }
 
+/* Set pose index; ARENA_SET_ANIM overrides (-1 = no pose, keep locomotion).
+ * DEFAULT 29 = the game's own drop clip: the drop handler plays it
+ * (func_80282E5C_code_extra_0, m2c 2026-07-30: func_8001C0EC(0,0,0x1D,1,
+ * D_80115808)), and the front-view motion strips show a step-and-reach-DOWN
+ * place — the old "reads as a throw" call was a far/back-camera artifact
+ * (tools/anims/strips/). 41 (the contact-sheet pick) is a near-static stand;
+ * the 2026-07-30 feel test flagged it. 41/42 remain reachable by env. */
 extern "C" int arena_set_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_SET_ANIM");
-        if (v) { int n = std::atoi(v); if (n >= 0 && n < 64) return n; }
-        return 41;
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 29;
     }();
     return idx;
 }
@@ -699,14 +763,17 @@ extern "C" int arena_pose_anim(void) {
     return (g_pose_frames > 0) ? g_pose_anim : -1;
 }
 
-/* Kick pose index; ARENA_KICK_ANIM overrides. 32 comes from the contact sheet,
- * confirmed by eye - there is no decomp source for it, because the decomp pass
- * concluded no kick animation existed at all. */
+/* Kick pose index; ARENA_KICK_ANIM overrides (-1 = NO pose, keep locomotion).
+ * DEFAULT -1 = authentic: the real game plays NO kick anim — the walk-in kick
+ * is 100% bomb-side (§8.5c: zero anim calls in 69AA0.c), the bomb shooting
+ * away IS the feedback. The 2026-07-30 front-view strips confirmed 32/33 are
+ * crouch/react clips, not kicks (tools/anims/strips/); both stay reachable by
+ * env for comparison. */
 extern "C" int arena_kick_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_KICK_ANIM");
-        if (v) { int n = std::atoi(v); if (n >= 0 && n < 64) return n; }
-        return 32;
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return -1;
     }();
     return idx;
 }

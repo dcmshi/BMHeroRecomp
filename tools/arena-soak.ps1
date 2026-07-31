@@ -34,23 +34,18 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 # -Mode <n>         : ARENA_AUTO_BATTLE value (default 1; 3 for -Probe, 4 for
 #                     -AnimProbe).
 #
-# -AnimProbe asserts the set pose is STILL SHOWING 12 frames after the set edge:
-#   -Mode 4 -Expect '\[animw\] \+12 idx=41'
+# -AnimProbe asserts the set pose is showing AND ANIMATING 12 frames after the
+# set edge (frame counter risen to 24 by then, +2/frame):
+#   -Mode 4 -Rising '\[animw\] \+\d+ idx=29 frame=(\d+)'
 #
-# It used to be -Rising 'idx=<set> frame=(\d+)' — "the anim frame counter advanced".
-# That was the WRONG PROXY and it cost a wrong bug report (a supposed A1.5 camera
-# regression). Measured 2026-07-27: the game walker re-asserts its own anim EVERY
-# frame, and our trigger runs after it, so we can hold the pose only by
-# re-triggering — which restarts it, pinning the frame counter at 0 forever. The
-# counter can never advance with an overlay-style trigger, camera or no camera.
-#
-# The gate's INTENT was always "the pose actually appeared for a meaningful
-# duration, rather than flickering for one frame". Asserting it is still idx 29
-# twelve frames after the edge measures exactly that, and it is what the
-# implementation can honestly deliver. Real ANIMATION (a counter that advances)
-# needs the game's own set state engaged so the walker plays it itself — that is
-# still open; see integration notes §8.18.
-if ($AnimProbe -and -not $Expect -and -not $Rising) { $Expect = '\[animw\] \+12 idx=41' }
+# History: the -Rising form was retired 2026-07-27 as impossible — the walker
+# re-asserted its own anim every frame, so holding required re-triggering, which
+# pinned the counter at 0. Since 2026-07-30 the func_8001C0EC walker gate
+# (integration notes §8.23) lets the clip PLAY, so the honest gate is achievable
+# again and is the default. idx 29 = the game's own drop clip (§8.5c + the
+# 2026-07-30 front-view strips); ARENA_SET_ANIM overrides need a matching
+# explicit -Rising/-Expect.
+if ($AnimProbe -and -not $Expect -and -not $Rising) { $Rising = '\[animw\] \+\d+ idx=29 frame=(\d+)' }
 if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
 if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
 if ($Mode -eq 0) { $Mode = 1 }

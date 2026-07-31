@@ -157,6 +157,9 @@ DECLARE_FUNC(s32,  arena_export_anim_sweep_index); /* ARENA_ANIM_SWEEP; -1 = off
 DECLARE_FUNC(f32,  arena_export_cam_pitch_deg);   /* ARENA_CAM_PITCH; trig native */
 DECLARE_FUNC(f32,  arena_export_cam_pitch_sin);
 DECLARE_FUNC(f32,  arena_export_cam_pitch_cos);
+DECLARE_FUNC(f32,  arena_export_cam_yaw_deg);     /* ARENA_CAM_YAW; 3/4-front inspection shots */
+DECLARE_FUNC(f32,  arena_export_cam_yaw_eff_sin); /* sin/cos(yaw+90), trig native (8.11) */
+DECLARE_FUNC(f32,  arena_export_cam_yaw_eff_cos);
 DECLARE_FUNC(s32,  arena_export_player_hp, s32 i);      /* A1.2g HUD: sim HP     */
 DECLARE_FUNC(s32,  arena_export_player_stocks, s32 i);  /* rounds won            */
 DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*               */
@@ -234,7 +237,11 @@ static void arena_cam_stamp(void) {
      * come with it, because this patch must never emit a sinf/cosf libcall
      * (notes 8.11). Default is ARENA_CAM_PITCH_DEG, so play is unchanged. */
     gView.rot.x = arena_export_cam_pitch_deg();
-    gView.rot.y = ARENA_CAM_YAW_DEG;     /* the value that MUST stay fixed      */
+    /* Yaw from native so inspection shots can orbit with ARENA_CAM_YAW (the
+     * 2026-07-30 pose review wanted a 3/4 FRONT angle). Default is the header's
+     * ARENA_CAM_YAW_DEG (0) — shipped play unchanged, and the value still MUST
+     * stay fixed within a session (the stick rotates by gView.rot.y). */
+    gView.rot.y = arena_export_cam_yaw_deg();
     gView.rot.z = 0.0f;
     gView.dist  = dist;
 
@@ -252,9 +259,9 @@ static void arena_cam_stamp(void) {
     {
         f32 sp = arena_export_cam_pitch_sin();
         f32 cp = arena_export_cam_pitch_cos();
-        gView.eye.x = ax + dist * ARENA_CAM_COS_YAW_EFF * cp;
+        gView.eye.x = ax + dist * arena_export_cam_yaw_eff_cos() * cp;
         gView.eye.y = ay + dist * sp;
-        gView.eye.z = az + dist * ARENA_CAM_SIN_YAW_EFF * cp;
+        gView.eye.z = az + dist * arena_export_cam_yaw_eff_sin() * cp;
     }
     gView.up.x  = 0.0f;
     gView.up.y  = 1.0f;   /* pitch 60 is < 90, so the game's rule gives +1 */

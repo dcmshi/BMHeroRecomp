@@ -190,6 +190,17 @@ extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx) {
                     _arg<2, int>(rdram, ctx));
 }
 
+/* Camera yaw (ARENA_CAM_YAW): f32 returns are fine over the ABI. */
+extern "C" void arena_export_cam_yaw_deg(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_cam_yaw_deg());
+}
+extern "C" void arena_export_cam_yaw_eff_sin(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_cam_yaw_eff_sin());
+}
+extern "C" void arena_export_cam_yaw_eff_cos(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_cam_yaw_eff_cos());
+}
+
 /* A1.5: camera probe. Four int args - floats travel as BIT PATTERNS because the
  * export ABI takes no float arguments (integration notes 8.2). */
 extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx) {
