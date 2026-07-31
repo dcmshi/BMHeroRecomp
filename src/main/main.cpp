@@ -704,13 +704,34 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                  * replaced by idx 3 after ONE frame with the camera both ON and
                  * OFF. Release at 200, set at 215 (15 frames, 2.5x the stop
                  * time), and keep standing so the pose has room to play out. */
-                if (ap >= 200 && ap < 260) {
+                /* 2026-07-31: the old standing window (release 200 / set 215)
+                 * was landing INSIDE the sim's 180-tick countdown (log: the
+                 * registered sets were at t216/t246 with state=4 = running,
+                 * i.e. only the later MOVING pulses ever counted) - the gate
+                 * stayed green anyway because the pose used to play while
+                 * moving. The standing-only pose rule exposed it: stand well
+                 * past the countdown, set with margin. */
+                if (ap >= 250 && ap < 340) {
                     *y = 0.0f;                                   /* stand still */
-                    if (ap >= 215 && ap < 223) *buttons |= 0x2000;   /* then set */
+                    if (ap >= 285 && ap < 293) *buttons |= 0x2000;   /* then set */
                 }
-                if ((ap >= 300 && ap < 308) || (ap >= 360 && ap < 368)) {
-                    *buttons |= 0x2000;                          /* set WHILE MOVING (repro live twitch) */
+                if ((ap >= 380 && ap < 388) || (ap >= 440 && ap < 448)) {
+                    *buttons |= 0x2000;                          /* set WHILE MOVING (must NOT pose now) */
                 }
+            }
+            if (mode && std::atoi(mode) == 11) {
+                /* THROW probe (v15 impact detonation). Hold B (grab) well past
+                 * the sim's 180-tick countdown, release -> the bomb flies and
+                 * must detonate ON IMPACT (~16-20 ticks), NOT settle and fuse
+                 * (150). Evidence: [throw] tN then [blastvis] ... tM with
+                 * M - N << 150. Hold stays < TUNE_SPREAD_TICKS (120) so this is
+                 * a single throw, not the spread. Twice, for two samples.
+                 * (Poll counter runs ~45 ahead of the sim tick - the hold must
+                 * START after the countdown has really ended, §8.22.) */
+                static uint32_t thp = 0;
+                thp++;
+                if ((thp >= 250 && thp < 300) || (thp >= 400 && thp < 450))
+                    *buttons |= 0x4000;                      /* CONT_B: grab-hold */
             }
             if (mode && std::atoi(mode) == 10) {
                 /* KICK probe. Set a bomb, walk clear of it, then walk back into

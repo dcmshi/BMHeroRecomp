@@ -175,13 +175,38 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
      * tick (the set-placement transition). arena_set_new(i) reads-and-clears. */
     for (int b = 0; b < ARENA_MAX_BOMBS; b++) {
         uint8_t now = g_state.bombs[b].state;
+        /* v15 throw evidence: log the HELD->AIRBORNE edge tick-stamped, so the
+         * throw probe can prove impact detonation by latency ([blastvis] tick
+         * minus [throw] tick << TUNE_FUSE_TICKS). */
+        if (g_bomb_prev_state[b] == BSTATE_HELD && now == BSTATE_AIRBORNE) {
+            if (g_log) {
+                std::fprintf(g_log, "[throw] t%u bomb=%d owner=%d\n",
+                             g_state.tick, b, (int)g_state.bombs[b].owner);
+                std::fflush(g_log);
+            }
+        }
         if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
             int o = g_state.bombs[b].owner;
             if (o >= 0 && o < ARENA_MAX_PLAYERS) g_set_edge[o] = 1;
             if (o == 0) {
                 g_anim_since_set = 0;           /* open the [animw] window */
-                g_pose_anim   = arena_set_anim_index();
-                g_pose_frames = arena_pose_frames();
+                /* STANDING-ONLY pose (2026-07-31): a pose played while the body
+                 * keeps gliding at run speed reads broken no matter which clip
+                 * it is — and the classic games play no set pose while running
+                 * (locomotion continues). Play the drop clip only when the
+                 * player is actually standing; ARENA_POSE_MOVING=1 restores
+                 * always-pose for A/B. */
+                static const bool pose_moving = []() {
+                    const char* v = std::getenv("ARENA_POSE_MOVING");
+                    return v && v[0] == '1';
+                }();
+                float vx = qf(g_state.players[0].vel.x);
+                float vz = qf(g_state.players[0].vel.z);
+                bool standing = (vx * vx + vz * vz) < 0.0025f; /* < 0.05 su/t */
+                if (standing || pose_moving) {
+                    g_pose_anim   = arena_set_anim_index();
+                    g_pose_frames = arena_pose_frames();
+                }
             }
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
                 std::fprintf(g_log, "[setdbg] t%u bi=%d live=%d simY=%.3f wy=%.2f originY=%.2f slot=%d\n",
@@ -560,7 +585,9 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
 extern "C" void arena_dbg_blast(int k, int slot, int wrbits) {
     union { int i; float f; } wr; wr.i = wrbits;
     if (g_log) {
-        std::fprintf(g_log, "[blastvis] k=%d slot=%d wr=%.1f\n", k, slot, wr.f);
+        /* tick appended LAST so existing gate regexes keep matching */
+        std::fprintf(g_log, "[blastvis] k=%d slot=%d wr=%.1f t%u\n",
+                     k, slot, wr.f, g_state.tick);
         std::fflush(g_log);
     }
 }
