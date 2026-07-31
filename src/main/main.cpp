@@ -115,6 +115,7 @@ extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
+extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx);   // explosion visual evidence
 #include "ovl_patches.hpp"
 #include "theme.h"
 #include "librecomp/game.hpp"
@@ -1040,6 +1041,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_blast_wz);
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
+    REGISTER_FUNC(arena_export_dbg_blast);
     REGISTER_FUNC(arena_export_dbg_cam);
     REGISTER_FUNC(arena_export_floor_guard);
     REGISTER_FUNC(arena_export_floor_last_x);

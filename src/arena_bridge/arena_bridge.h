@@ -60,6 +60,9 @@ int   arena_blastactor_get_slot(int i);
 /* A1.4 set-bomb animation (patch-callable). */
 int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
 void  arena_dbg_anim(int idx, int frame, int state);  /* anim idx+frame+actionState */
+/* Explosion visual evidence: one line per blast->actor drive frame (bounded by
+ * TUNE_BLAST_TTL per blast). wr crosses as a float BIT PATTERN. */
+void  arena_dbg_blast(int k, int slot, int wrbits);
 /* A1.5 camera probe. tag: 0=at 1=eye 2=rot 3=up 4=misc(x=gCameraType as a plain
  * int, y=dist bits). Other tags carry three float BIT PATTERNS - the export ABI
  * takes no float arguments. Probe-mode gating and throttling are native-side, so

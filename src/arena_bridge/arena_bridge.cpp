@@ -523,6 +523,19 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
     }
 }
 
+/* Explosion visual evidence: the patch reports every blast->actor drive frame
+ * ([blastvis]), so the soak can assert both that a detonation DREW something
+ * and that its radius GREW (-Rising on the wr integer part). Bounded output:
+ * TUNE_BLAST_TTL (20) lines per blast, every write flushed (crash-safe). The
+ * radius crosses as a float BIT PATTERN - the export ABI takes no float args. */
+extern "C" void arena_dbg_blast(int k, int slot, int wrbits) {
+    union { int i; float f; } wr; wr.i = wrbits;
+    if (g_log) {
+        std::fprintf(g_log, "[blastvis] k=%d slot=%d wr=%.1f\n", k, slot, wr.f);
+        std::fflush(g_log);
+    }
+}
+
 /* A1.5: arena centre in Hero world coords, for gView.at.
  *
  * Deliberately reuses the SAME frozen-origin mapping as the puppets: if the

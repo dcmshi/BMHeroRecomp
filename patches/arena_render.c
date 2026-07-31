@@ -45,6 +45,13 @@ DECLARE_FUNC(s32,  arena_export_blast_new, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wx, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wy, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wz, s32 i);
+/* Explosion visual (reuse the bomb pool as blast balls, §8.13). These two were
+ * previously called with IMPLICIT declarations (a latent bug: an implicit decl
+ * of an f32-returning export reads $v0 instead of $f0 — garbage); declare them
+ * properly. dbg_blast logs [blastvis] evidence natively (gate: -Rising). */
+DECLARE_FUNC(s32,  arena_export_blast_active, s32 i);   /* sim blast alive      */
+DECLARE_FUNC(f32,  arena_export_blast_wr, s32 i);       /* world radius, grows  */
+DECLARE_FUNC(void, arena_export_dbg_blast, s32 k, s32 slot, s32 wrbits);
 extern void func_80081468(s32 id, f32 x, f32 y, f32 z);   /* spawn effect by ID at pos */
 
 /* Game proper-spawn: scans gObjects[14..77], loads mesh from gFileArray[info->unk4]. */
@@ -740,7 +747,11 @@ void arena_render_routine(void) {
             }
         }
 
-        /* A1.2c: show + position each live sim bomb, hide the free ones. */
+        /* A1.2c: show + position each live sim bomb, hide the free ones.
+         * Scale is FORCED back to 1.0 for live bombs because the blast block
+         * below reuses freed bomb actors as scaled-up blast balls — an actor
+         * coming back as a bomb must shed that scale (spawn default IS 1.0:
+         * boot/17930.c:730). */
         {
             s32 bi;
             for (bi = 0; bi < 16; bi++) {
@@ -750,6 +761,9 @@ void arena_render_routine(void) {
                         gObjects[slot].Pos.x       = arena_export_bomb_wx(bi);
                         gObjects[slot].Pos.y       = arena_export_bomb_wy(bi);
                         gObjects[slot].Pos.z       = arena_export_bomb_wz(bi);
+                        gObjects[slot].Scale.x     = 1.0f;
+                        gObjects[slot].Scale.y     = 1.0f;
+                        gObjects[slot].Scale.z     = 1.0f;
                         gObjects[slot].actionState = ACTION_IDLE;   /* visible */
                     } else {
                         gObjects[slot].actionState = ACTION_NONE;   /* hidden */
@@ -758,36 +772,48 @@ void arena_render_routine(void) {
             }
         }
 
-        /* A1.2c slice 2 (fallback visual): drive the 4 blast actors from the
-         * sim's live blasts — position at each blast center, Scale grown with
-         * the sim radius (also doubles as the generic-draw Scale test: if
-         * Scale is ignored they still show as a normal-size 'pop'). The game
-         * effect spawner (func_80081468) was abandoned: in this bypassed
-         * arena its effects render invisible and several IDs crash the
-         * effect-list draw (func_8001CDF4) — see integration notes. */
+        /* EXPLOSION VISUAL (§8.13's documented approach): reuse the bomb pool's
+         * own actors as blast balls. A bomb's actor frees on the exact tick its
+         * blast spawns (bomb_active drops, blast ttl starts), so the pool covers
+         * blasts with ZERO new model-pool slots — the ~8-actor ceiling that
+         * killed the separate A1.2c blast actors is never approached.
+         *
+         * Assignment is stateless and order-based (free actors in slot order ->
+         * active blasts in blast order). A blast may hop actors when the free
+         * set churns mid-blast; both actors are the same mesh driven to the same
+         * pos/scale, so the hop is invisible. If blasts outnumber free actors
+         * the excess simply doesn't render (ceiling-bounded, acceptable).
+         *
+         * The draw DOES honor Scale — guScaleF(gObjects[i].Scale) in the generic
+         * object matrix (boot/17930.c:474/512) — so the ball grows with the
+         * sim's radius. Mesh base ~15u; TODO(feel): the /15 divisor. This block
+         * runs AFTER the bomb block, same frame, so hide->show never flickers
+         * (the §8.13 pattern). */
         {
-            s32 aj = 0;
-            s32 bi;
-            for (bi = 0; bi < 16 && aj < 4; bi++) {
-                if (arena_export_blast_active(bi)) {
-                    s32 slot = arena_export_blastactor_get_slot(aj);
-                    if (slot >= 0) {
-                        f32 sc = arena_export_blast_wr(bi) / 15.0f;   /* mesh~15u base; TODO(feel) */
-                        if (sc < 1.0f) sc = 1.0f;
-                        gObjects[slot].Pos.x       = arena_export_blast_wx(bi);
-                        gObjects[slot].Pos.y       = arena_export_blast_wy(bi);
-                        gObjects[slot].Pos.z       = arena_export_blast_wz(bi);
-                        gObjects[slot].Scale.x     = sc;
-                        gObjects[slot].Scale.y     = sc;
-                        gObjects[slot].Scale.z     = sc;
-                        gObjects[slot].actionState = ACTION_IDLE;
-                    }
-                    aj++;
-                }
+            s32 free_slot[BOMB_POOL];
+            s32 nfree = 0;
+            s32 used  = 0;
+            s32 bi, k;
+            for (bi = 0; bi < 16 && nfree < BOMB_POOL; bi++) {
+                s32 slot = arena_export_bomb_get_slot(bi);
+                if (slot >= 0 && !arena_export_bomb_active(bi))
+                    free_slot[nfree++] = slot;
             }
-            for (; aj < 4; aj++) {
-                s32 slot = arena_export_blastactor_get_slot(aj);
-                if (slot >= 0) gObjects[slot].actionState = ACTION_NONE;
+            for (k = 0; k < 16 && used < nfree; k++) {
+                if (arena_export_blast_active(k)) {
+                    s32 slot = free_slot[used++];
+                    f32 wr = arena_export_blast_wr(k);
+                    f32 sc = wr / 15.0f;              /* mesh~15u base; TODO(feel) */
+                    if (sc < 1.0f) sc = 1.0f;
+                    gObjects[slot].Pos.x       = arena_export_blast_wx(k);
+                    gObjects[slot].Pos.y       = arena_export_blast_wy(k);
+                    gObjects[slot].Pos.z       = arena_export_blast_wz(k);
+                    gObjects[slot].Scale.x     = sc;
+                    gObjects[slot].Scale.y     = sc;
+                    gObjects[slot].Scale.z     = sc;
+                    gObjects[slot].actionState = ACTION_IDLE;
+                    arena_export_dbg_blast(k, slot, fbits(wr));   /* [blastvis] */
+                }
             }
         }
 
