@@ -81,15 +81,15 @@ extern void func_8001ABF4(s32 arg0, s32 arg1, s32 arg2, struct UnkStruct8016C298
  * objID and only borrows the entry's mesh + anim tables. */
 extern void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u32* animTable);
 
-/* A1.4 set-bomb animation. On a sim set edge for player 0, play the game's own
- * set/drop-bomb pose on gPlayerObject: code_extra_0 anim 29, bank 1, table
- * D_80115808 — the EXACT trigger form proven by the fork's teleporter_obj.c
- * (same call, anim 7). D_80115808 resolves in patches (it's in data_dump.toml),
- * so no literal-address workaround (§8.2) is needed for the table. The read-back
- * getters func_8001B880/62C resolve as functions and read the live model-anim
- * record (unk14 index / unk24 frame @ +2/frame) for the auto-verify probe. Kick
- * has NO game anim (integration notes §8.5c) — the player keeps locomotion, no
- * trigger. */
+/* A1.4 action poses: set 41 / kick 32 (identified by RENDERING the asset table,
+ * §8.22 — the state-machine-derived 29 draws a throw). Table D_80115808, bank 1;
+ * the trigger form is the one proven by teleporter_obj.c (same call, anim 7).
+ * D_80115808 resolves in patches (it's in data_dump.toml), so no literal-address
+ * workaround (§8.2) is needed for the table. The read-back getters
+ * func_8001B880/62C resolve as functions and read the live model-anim record
+ * (unk14 index / unk24 frame @ +2/frame) for the auto-verify probe. The poses
+ * ANIMATE (not just hold) via the RECOMP_PATCH of func_8001C0EC below, which
+ * drops the walker's competing anim writes while a pose window is open. */
 extern s32 D_80115808[];                          /* code_extra_0 player anim table */
 extern s32 func_8001B880(s32 objId, s32 part);    /* live anim index (unk14) */
 extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (unk24) */
@@ -158,6 +158,38 @@ DECLARE_FUNC(s32,  arena_export_match_phase);           /* PHASE_*              
 DECLARE_FUNC(f32,  arena_export_cam_at_x);  /* arena centre, Hero world coords  */
 DECLARE_FUNC(f32,  arena_export_cam_at_y);
 DECLARE_FUNC(f32,  arena_export_cam_at_z);
+
+/* ---- The walker gate (A1 polish: poses ANIMATE, 2026-07-30) --------------
+ * func_8001BE6C resets the anim frame counter (unk24 = 0) on EVERY call, so
+ * §8.18's hold-by-retrigger could show the right pose but never advance it —
+ * the frame counter was pinned at 0 by construction. The fix is to stop the
+ * fight instead of winning it every frame: func_8001C0EC is the single
+ * anim-trigger funnel the player overlay uses (all 69 anim calls in the
+ * code_extra_0 machine-C, funcs_50-54.c, go through it; ZERO call func_8001BE6C
+ * directly — checked 2026-07-30), so while a pose window is open we drop any
+ * competing anim write to the player body here. The pose is then triggered ONCE
+ * (the block in arena_render_routine) and the game's own anim engine advances
+ * the clip — which also makes the honest -Rising 'frame=(\d+)' gate achievable
+ * again (§8.18 had to retire it as impossible).
+ *
+ * Every other call — other objects, other parts, window closed, and the whole
+ * menu/load/demo path — passes through byte-identically to the original
+ * (boot/17930.c:1187). arena_export_pose_anim is a pure native getter (reads
+ * two host ints, no I/O — NOT recomp_printf-class, §machinery-ref D/F), and the
+ * objId/part check short-circuits it for everything but the player body.
+ * Known interaction: an ARENA_ANIM_SWEEP re-assert would also be dropped while
+ * a pose window is open; sweep runs (anim-contactsheet.ps1) don't run battle
+ * probes, so the two never coexist in practice. */
+/* func_8001BE6C is declared in functions.h with arg3 as s32 (the game address
+ * of the anim source); cast exactly as the original call site does. */
+RECOMP_PATCH void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u32* animTable) {
+    if (objId == 0 && part == 0) {
+        s32 pose = arena_export_pose_anim();
+        if (pose >= 0 && animIdx != pose)
+            return;                 /* walker steal dropped; the clip keeps playing */
+    }
+    func_8001BE6C(objId, part, animIdx, (s32)&gFileArray[fileID].ptr[animTable[animIdx]]);
+}
 
 /* Bit-cast a float into an int arg for the export ABI. */
 static s32 fbits(f32 v) { union { f32 f; s32 i; } u; u.f = v; return u.i; }
@@ -525,12 +557,15 @@ void arena_render_routine(void) {
         {
             arena_export_set_new(0);        /* drain: the bridge owns the edge now */
             if (gPlayerObject->Unk140[0] >= 0) {
-                /* HOLD, not one-shot. Measured 2026-07-27 with the [animw]
-                 * window: the walker (func_80024744, which runs BEFORE this
-                 * block every frame) re-asserts its own anim unconditionally, so
-                 * a single trigger is replaced on the very next frame - with the
-                 * camera on AND off, standing still AND moving. Re-assert while
-                 * the native hold window is open and the walker has taken it. */
+                /* Trigger ONCE per pose window. The walker (func_80024744, which
+                 * runs BEFORE this block every frame) re-asserts its own anim
+                 * whenever the current index isn't the one it wants (§8.18) —
+                 * but the func_8001C0EC gate above drops those writes while the
+                 * window is open, so after this single trigger the game's anim
+                 * engine advances the clip untouched. The idx-mismatch condition
+                 * is kept as a FALLBACK: if some unfunneled path ever steals the
+                 * anim, this restores the pose (clip restarts — visible in the
+                 * frame log as a reset, which is exactly the evidence we'd want). */
                 /* ARENA_ANIM_SWEEP cycles every index so the right pose can be
                  * identified by eye in ONE run; it overrides the set pose while
                  * active and is off by default. */
@@ -539,14 +574,13 @@ void arena_render_routine(void) {
                     if (func_8001B880(0, 0) != sweep)
                         func_8001C0EC(0, 0, sweep, 1, (u32*)D_80115808);
                 } else {
-                    /* -1 = no action pose open; otherwise re-assert whenever the
-                     * walker has taken the anim back. */
+                    /* -1 = no action pose open. */
                     s32 pose = arena_export_pose_anim();
                     if (pose >= 0 && func_8001B880(0, 0) != pose)
                         func_8001C0EC(0, 0, pose, 1, (u32*)D_80115808);
                 }
-                /* Auto-verify probe (temporary): burst-log the live anim index +
-                 * frame so arena-soak.ps1 asserts idx->29 with the frame advancing. */
+                /* Auto-verify probe: burst-log the live anim index + frame so
+                 * arena-soak.ps1 can assert idx->41/32 with the frame RISING. */
                 arena_export_dbg_anim(func_8001B880(0, 0), (s32)func_8001B62C(0, 0),
                                       (s32)gPlayerObject->actionState);
             }
