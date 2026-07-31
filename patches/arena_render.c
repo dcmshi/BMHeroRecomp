@@ -45,13 +45,17 @@ DECLARE_FUNC(s32,  arena_export_blast_new, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wx, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wy, s32 i);
 DECLARE_FUNC(f32,  arena_export_blast_wz, s32 i);
-/* Explosion visual (reuse the bomb pool as blast balls, §8.13). These two were
- * previously called with IMPLICIT declarations (a latent bug: an implicit decl
- * of an f32-returning export reads $v0 instead of $f0 — garbage); declare them
- * properly. dbg_blast logs [blastvis] evidence natively (gate: -Rising). */
+/* Explosion visual. These two were previously called with IMPLICIT
+ * declarations (a latent bug: an implicit decl of an f32-returning export
+ * reads $v0 instead of $f0 — garbage); declare them properly. dbg_blast logs
+ * [blastvis] evidence natively. */
 DECLARE_FUNC(s32,  arena_export_blast_active, s32 i);   /* sim blast alive      */
 DECLARE_FUNC(f32,  arena_export_blast_wr, s32 i);       /* world radius, grows  */
 DECLARE_FUNC(void, arena_export_dbg_blast, s32 k, s32 slot, s32 wrbits);
+/* The game's own bomb-explosion spawner (code/70C40.c:12): dedicated pool
+ * gObjects[6..13], two-part mesh from gFileArray[0xD], SFX, self-managed
+ * lifecycle. NOT in functions.h (checked 2026-07-30) — declared here. */
+extern void func_8007E76C(f32 x, f32 y, f32 z, s32 type);
 extern void func_80081468(s32 id, f32 x, f32 y, f32 z);   /* spawn effect by ID at pos */
 
 /* Game proper-spawn: scans gObjects[14..77], loads mesh from gFileArray[info->unk4]. */
@@ -772,47 +776,35 @@ void arena_render_routine(void) {
             }
         }
 
-        /* EXPLOSION VISUAL (§8.13's documented approach): reuse the bomb pool's
-         * own actors as blast balls. A bomb's actor frees on the exact tick its
-         * blast spawns (bomb_active drops, blast ttl starts), so the pool covers
-         * blasts with ZERO new model-pool slots — the ~8-actor ceiling that
-         * killed the separate A1.2c blast actors is never approached.
+        /* EXPLOSION VISUAL v2: spawn the GAME'S OWN explosion on each blast
+         * birth. func_8007E76C(x,y,z,0) (code/70C40.c:12) is the exact call the
+         * game's bomb makes when its fuse ends (func_800795C8, 69AA0.c:465):
+         * it takes a slot from the DEDICATED explosion pool gObjects[6..13]
+         * (untouched by the arena bypass and by our generic-pool actors, so the
+         * ~8-actor ceiling is not in play), binds the two-part blast mesh from
+         * gFileArray[0xD] (a low-index core asset, resident in every level -
+         * the game player's own thrown bombs already exploded in-arena through
+         * this path), plays the explosion SFX, and its objID handler runs its
+         * own grow/expire lifecycle. Feel-test verdict on v1 (a scaled-up bomb
+         * mesh): "reads as a giant bomb, not a blast" - so use the real thing.
          *
-         * Assignment is stateless and order-based (free actors in slot order ->
-         * active blasts in blast order). A blast may hop actors when the free
-         * set churns mid-blast; both actors are the same mesh driven to the same
-         * pos/scale, so the hop is invisible. If blasts outnumber free actors
-         * the excess simply doesn't render (ceiling-bounded, acceptable).
-         *
-         * The draw DOES honor Scale — guScaleF(gObjects[i].Scale) in the generic
-         * object matrix (boot/17930.c:474/512) — so the ball grows with the
-         * sim's radius. Mesh base ~15u; TODO(feel): the /15 divisor. This block
-         * runs AFTER the bomb block, same frame, so hide->show never flickers
-         * (the §8.13 pattern). */
+         * The sim blast's birth edge comes from arena_export_blast_new(k),
+         * which edge-detects natively (call ALL k every frame). The sim's
+         * hitbox radius (192u full) is not passed - the game explosion draws
+         * its own size (gFireCount-scaled, the campaign default); if the feel
+         * pass wants them matched, set gFireCount or override Scale on the
+         * spawned slot. v1's scaled-ball loop is deleted, not disabled - git
+         * has it if the extent-ball is ever wanted again. */
         {
-            s32 free_slot[BOMB_POOL];
-            s32 nfree = 0;
-            s32 used  = 0;
-            s32 bi, k;
-            for (bi = 0; bi < 16 && nfree < BOMB_POOL; bi++) {
-                s32 slot = arena_export_bomb_get_slot(bi);
-                if (slot >= 0 && !arena_export_bomb_active(bi))
-                    free_slot[nfree++] = slot;
-            }
-            for (k = 0; k < 16 && used < nfree; k++) {
-                if (arena_export_blast_active(k)) {
-                    s32 slot = free_slot[used++];
-                    f32 wr = arena_export_blast_wr(k);
-                    f32 sc = wr / 15.0f;              /* mesh~15u base; TODO(feel) */
-                    if (sc < 1.0f) sc = 1.0f;
-                    gObjects[slot].Pos.x       = arena_export_blast_wx(k);
-                    gObjects[slot].Pos.y       = arena_export_blast_wy(k);
-                    gObjects[slot].Pos.z       = arena_export_blast_wz(k);
-                    gObjects[slot].Scale.x     = sc;
-                    gObjects[slot].Scale.y     = sc;
-                    gObjects[slot].Scale.z     = sc;
-                    gObjects[slot].actionState = ACTION_IDLE;
-                    arena_export_dbg_blast(k, slot, fbits(wr));   /* [blastvis] */
+            s32 k;
+            for (k = 0; k < 16; k++) {
+                if (arena_export_blast_new(k)) {
+                    func_8007E76C(arena_export_blast_wx(k),
+                                  arena_export_blast_wy(k),
+                                  arena_export_blast_wz(k), 0);
+                    /* slot=-2 marks the game-explosion path (v1 logged the
+                     * driven actor slot here). */
+                    arena_export_dbg_blast(k, -2, fbits(arena_export_blast_wr(k)));
                 }
             }
         }
