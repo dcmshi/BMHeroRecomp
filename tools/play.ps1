@@ -31,7 +31,7 @@ if (-not (Test-Path $exe)) { Write-Error "missing $exe (build first: .\build.ps1
 $knobs = @("ARENA_SET_ANIM","ARENA_KICK_ANIM","ARENA_POSE_FRAMES","ARENA_POSE_MOVING",
            "ARENA_CAM_DIST","ARENA_CAM_PITCH","ARENA_CAM_YAW","ARENA_CAM_FOLLOW",
            "ARENA_CAM_OFF","ARENA_CAM_ZFAR","ARENA_AUTO_BATTLE","ARENA_ANIM_SWEEP",
-           "ARENA_PROBE_AXIS","ARENA_RASTER_N","ARENA_RASTER_STEP")
+           "ARENA_PROBE_AXIS","ARENA_RASTER_N","ARENA_RASTER_STEP","ARENA_ORACLE")
 
 # snapshot + clear, so ONLY the flags below apply to the child
 $saved = @{}

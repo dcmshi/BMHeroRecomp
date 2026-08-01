@@ -652,6 +652,44 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
  * needed. Self-stops once in-arena; harmless jitter before that. */
 static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     bool ok = recompinput::profiles::get_n64_input(controller_num, buttons, x, y);
+    /* Single-player ORACLE (spec 2026-08-01): mash to a level, then scripted
+     * bomb verbs. Poll counter ~= frame counter; phase markers land in the
+     * log with the shared n stamp, which is the goldens' clock. */
+    static const bool oracle_active = []() {
+        const char* v = std::getenv("ARENA_ORACLE");
+        return v && v[0] == '1'; }();
+    if (oracle_active && ok && controller_num == 0) {
+        if (!arena_oracle_seen()) {
+            /* same synthetic mash as battle: 4 polls on / 4 off, START|A */
+            static uint32_t omash = 0;
+            omash++;
+            if ((omash >> 2) & 1)
+                *buttons |= ((omash >> 3) & 1) ? 0x1000    /* START */
+                                               : 0x8000;   /* A */
+        } else {
+            static uint32_t op = 0;
+            op++;
+            if (op == 1)    arena_oracle_phase("in-level");
+            if (op >= 300 && op < 420) {                 /* locomotion baseline */
+                *y = -1.0f;
+                if (op == 300) arena_oracle_phase("walk");
+            }
+            if (op == 420)  arena_oracle_phase("stand"); /* 60 polls of idle */
+            if (op >= 480 && op < 484) {                 /* tap B: drop/short throw */
+                *buttons |= 0x4000;                       /* CONT_B */
+                if (op == 480) arena_oracle_phase("dropB");
+            }
+            /* 484-900: observe - covers the game bomb's own fuse + blast */
+            if (op >= 900 && op < 960) {                 /* hold B ... */
+                *buttons |= 0x4000;
+                if (op == 900) arena_oracle_phase("holdB");
+            }
+            if (op == 960)  arena_oracle_phase("releaseB"); /* ... throw */
+            /* 960-1260: observe flight + impact */
+            if (op == 1260) arena_oracle_phase("DONE");
+        }
+        return ok;
+    }
     static const bool soak_active = []() {
         const char* v = std::getenv("ARENA_AUTO_BATTLE");
         return v != nullptr && (v[0] == '1' || v[0] == '3' || v[0] == '4' || v[0] == '5' || v[0] == '6' || v[0] == '7' || v[0] == '8' || v[0] == '9');   /* 3=facing 4=anim 5=arena-measure 6=camera 7=floor-raster 8=direction 9=turn */
@@ -830,14 +868,20 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
  * settles. Firing at launcher INIT instead dies ~11s in (dumpless exit). */
 static void soak_launcher_update(recompui::LauncherMenu *menu) {
     banjo::launcher_animation_update(menu);
-    static const char* soak = std::getenv("ARENA_AUTO_BATTLE");
+    static const char* soak   = std::getenv("ARENA_AUTO_BATTLE");
+    static const char* oracle = std::getenv("ARENA_ORACLE");
     static int frames = 0;
     static bool fired = false;
-    if (soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' || soak[0] == '4' || soak[0] == '5' || soak[0] == '6' || soak[0] == '7' || soak[0] == '8' || soak[0] == '9') && !fired && ++frames >= 60) {
+    bool soak_on   = soak && (soak[0] == '1' || soak[0] == '2' || soak[0] == '3' ||
+                              soak[0] == '4' || soak[0] == '5' || soak[0] == '6' ||
+                              soak[0] == '7' || soak[0] == '8' || soak[0] == '9');
+    bool oracle_on = oracle && oracle[0] == '1';
+    if ((soak_on || oracle_on) && !fired && ++frames >= 60) {
         std::u8string gid = supported_games[0].game_id;
         if (recomp::is_rom_valid(gid)) {
             fired = true;
-            arena_bridge_set_battle_mode(1);
+            /* ORACLE boots VANILLA: no battle mode. Oracle wins if both set. */
+            if (!oracle_on) arena_bridge_set_battle_mode(1);
             recomp::start_game(gid, {});
             recompui::hide_all_contexts();
         }
