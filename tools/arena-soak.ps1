@@ -89,7 +89,19 @@ for ($i = 1; $i -le $N; $i++) {
     }
     $secs = [int]$sw.Elapsed.TotalSeconds
     if (($Probe -or $AnimProbe -or $Expect -or $Rising -or $Constant -or $Absent) -and $verdict -eq "PASS") {
-        Start-Sleep -Seconds 10   # let the injected input sample land in the log
+        # Dwell so the injected input's evidence lands in the log. With -Expect
+        # the dwell WAITS for the pattern (bounded by the remaining timeout;
+        # never less than the old flat 10s, which shorter probes rely on) -
+        # mode 13's scripted choreography runs ~20s and the flat sleep cut it
+        # off mid-script (round 9).
+        $dwell = [Diagnostics.Stopwatch]::StartNew()
+        $budget = [math]::Max(10, $TimeoutSec - $secs)
+        while ($dwell.Elapsed.TotalSeconds -lt $budget) {
+            $found = $Expect -and (Test-Path $log) -and
+                     (Select-String -Path $log -Pattern $Expect -Quiet)
+            if ($dwell.Elapsed.TotalSeconds -ge 10 -and ($found -or -not $Expect)) { break }
+            Start-Sleep -Seconds 2
+        }
     }
     Get-Process BMHeroRecompiled -ErrorAction SilentlyContinue | Stop-Process -Force
     $results += [pscustomobject]@{ Iter = $i; Verdict = $verdict; Seconds = $secs; Detail = $detail }

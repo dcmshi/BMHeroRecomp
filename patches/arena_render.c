@@ -377,6 +377,15 @@ void arena_render_routine(void) {
                                         fbits(gObjects[k].Pos.y),
                                         fbits(gObjects[k].Pos.z));
         }
+        /* player position (slot tag 0xFE -> [oracle-player]): the round-9
+         * stand-on-bomb golden needs the player's XZ against the bomb's -
+         * playerY alone can't tell "landed beside it" from "clipped through
+         * it". Same export, one reserved slot value. */
+        if (pvalid)
+            arena_export_oracle_obj((0xFE << 16) | ((s32)gPlayerObject->actionState & 0xFFFF),
+                                    fbits(gPlayerObject->Pos.x),
+                                    fbits(gPlayerObject->Pos.y),
+                                    fbits(gPlayerObject->Pos.z));
     }
 
     /* A1.2g - SUPPRESS THE ROOM'S OWN DAMAGE. In battle the SIM owns every hit
@@ -677,23 +686,24 @@ void arena_render_routine(void) {
         if (arena_export_puppet_ready()) {
             gPlayerObject->Pos.x = arena_export_puppet_wx(0);   /* absolute sim pos (no co-drive) */
             gPlayerObject->Pos.z = arena_export_puppet_wz(0);
-            /* Y: sim-driven WHILE AIRBORNE (round 6). The walker's own jump is
-             * a fixed mini-hop (~87 units, ~10 frames, hold-independent -
-             * measured, mode 12) while the sim's arc runs ~32 ticks; the
-             * visible player landed 20 ticks before the sim did, so a mid-air
-             * set looked like it killed the jump. The sim is the authority:
-             * follow its arc off the ground, hand Y back to the game's own
-             * grounding the moment the sim is grounded (flat arena floor). */
-            {
-                f32 sy = arena_export_player_y(0);
-                if (sy > 0.001f)
-                    gPlayerObject->Pos.y = arena_export_puppet_wy(0);
-            }
+            /* Y: sim-driven ALWAYS (round 9; was airborne-only since round 6).
+             * The airborne-only handback let the walker's OWN grounding
+             * reassert the moment the sim landed - and its ground scan treats
+             * the door-class bomb actors as standable ground, so landing on a
+             * set bomb snapped the player to the box top, 210 units up
+             * ([pstand] f0266 gameY=249 simY=0.076 -> f0268 gameY=450
+             * simY=0.000). On the flat arena floor the sim's grounded Y IS the
+             * captured grounding (origin_y), so full ownership costs nothing
+             * and closes the whole actor-as-ground class. */
+            gPlayerObject->Pos.y = arena_export_puppet_wy(0);
             /* [ydrive] evidence (tag 13): Pos.y AS DRIVEN, sampled right here -
              * the entry tag-7 sample reads the re-grounded value before this
              * drive and can never see the write. */
+            /* zbits carries actionState for the mode-13 [pstand] channel; the
+             * [ydrive] logger ignores it. */
             arena_export_dbg_cam(13, fbits(gPlayerObject->Pos.y),
-                                     fbits(arena_export_player_y(0)), 0);
+                                     fbits(arena_export_player_y(0)),
+                                     (s32)gPlayerObject->actionState);
         }
         /* A1.2e: Rot.y = 180 - sim_yaw, DERIVED (not guessed) from the game's
          * own movement math: game moves along (+sin th, +cos th) (2BF00.c:480),

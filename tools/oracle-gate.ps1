@@ -94,5 +94,61 @@ $hitLines = @($m12 | Select-String "\[anim\] idx=$($g.hit_anim_idx) frame=(\d+)"
 Check "stun plays the hit clip" ((Advanced $hitLines) -and ([math]::Abs($hitLines.Count - $g.hit_anim_frames) -le 3)) `
       "golden idx=$($g.hit_anim_idx) x$($g.hit_anim_frames), saw $($hitLines.Count) frames"
 
+# --- check 10: airset plays the legs-up clip (round 9; same mode-12 boot) -----
+# A midair set goes FREE->FALLING, which round 9 found was never latched - the
+# jump clip kept playing. The golden airset clip must play with frames rising,
+# then hand back to the jump clip. Mode 12 air-sets TWICE, so measure the FIRST
+# contiguous run of the clip, not the whole-log count (14 total = 2 episodes -
+# the first version of this check conflated them).
+$runFrames = @()
+foreach ($l in @($m12 | Select-String "\[anim\] idx=(\d+) frame=(\d+)")) {
+    $ix = [int]$l.Matches[0].Groups[1].Value
+    if ($ix -eq $g.airset_anim_idx) { $runFrames += [int]$l.Matches[0].Groups[2].Value }
+    elseif ($runFrames.Count -gt 0) { break }
+}
+$asOK = ($runFrames.Count -ge 2) -and
+        (($runFrames | Measure-Object -Maximum).Maximum -gt $runFrames[0]) -and
+        ([math]::Abs($runFrames.Count - $g.airset_anim_frames) -le 3)
+Check "airset plays the golden clip" $asOK `
+      "golden idx=$($g.airset_anim_idx) x$($g.airset_anim_frames), first run $($runFrames.Count) frames"
+
+# --- checks 11-13: carry clips + charge-hide + stand-on-bomb (mode-13 boot) ---
+# Round 9. The walker's own carry is broken in battle (its pool bomb dies to
+# the per-frame sweep, clip 41 re-triggered forever - feet frozen); the bridge
+# drives the golden carry clips through the pose window instead.
+$m13 = RunSoak @("-N","1","-Mode","13","-TimeoutSec","130","-Expect","\[hitpose\]")
+$cwLines = @($m13 | Select-String "\[carryw\] idx=$($g.carry_walk_anim_idx) frame=(\d+)")
+Check "carry-walk clip plays" ((Advanced $cwLines)) `
+      "golden idx=$($g.carry_walk_anim_idx), saw $($cwLines.Count) moving-carry frames"
+# the hand bomb hides the moment the windup clip is up (round-9 overlap frames)
+$ch = @($m13 | Select-String "\[chargehide\] anim=$($g.windup_anim_idx) ")
+Check "charge hides the hand bomb" ($ch.Count -ge 1) `
+      "golden windup idx=$($g.windup_anim_idx) @$($g.windup_start_frames)f, chargehide lines=$($ch.Count)"
+# landing on a set bomb: the old airborne-only Y handback let the walker ground
+# on the bomb ACTOR's box (plateau at floor+210). Any sustained plateau must be
+# at a vanilla-legal height: the floor, or (only if vanilla supports standing
+# on bombs) the golden stand lift. Plateau-based so the jump arc and the
+# end-of-run tumble can't fake it.
+$psY = @($m13 | Select-String '\[pstand\] f\d+ gameY=([-\d.]+)' |
+         ForEach-Object { [double]$_.Matches[0].Groups[1].Value })
+$orig = $m13 | Select-String '\[setdbg\] .* originY=([-\d.]+)' | Select-Object -First 1
+if ($psY.Count -ge 30 -and $orig) {
+    $o = [double]$orig.Matches[0].Groups[1].Value
+    $legal = @(0.0); if ($g.bomb_stand_supported) { $legal += [double]$g.bomb_stand_lift }
+    $badPlateau = $null
+    for ($i = 0; $i -le $psY.Count - 8; $i++) {
+        $w = $psY[$i..($i+7)]
+        $span = ($w | Measure-Object -Maximum).Maximum - ($w | Measure-Object -Minimum).Minimum
+        if ($span -lt 1.0) {
+            $lift = (($w | Measure-Object -Average).Average) - $o
+            $ok = $false
+            foreach ($L in $legal) { if ([math]::Abs($lift - $L) -le 8) { $ok = $true } }
+            if (-not $ok -and $lift -gt 20) { $badPlateau = [math]::Round($lift,1); break }
+        }
+    }
+    Check "no invisible box on bombs" ($null -eq $badPlateau) `
+          ("legal lifts: {0}; {1}" -f ($legal -join '/'), $(if ($null -ne $badPlateau) { "ILLEGAL plateau at +$badPlateau" } else { "all plateaus legal" }))
+} else { Check "no invisible box on bombs" $false "pstand samples=$($psY.Count), setdbg=$([bool]$orig)" }
+
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

@@ -717,7 +717,48 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 *buttons |= 0x0010;
                 if (op == 1752) arena_oracle_phase("airsetR");
             }
-            if (op == 2040) arena_oracle_phase("DONE");
+            /* 1756-2100: observe - the air-set bomb fuses out at the feet
+             * (~106f), the blast tumbles the player (hit-clip golden), and the
+             * recovery finishes well before the round-9 segments below. */
+            /* ---- Round 9 (2026-08-01) ------------------------------------ */
+            /* CARRY-WALK: hold B (carry) and walk DURING the hold. Kept short
+             * (90 polls) so the hold never reaches the windup - this window
+             * measures locomotion-while-carrying, nothing else. */
+            if (op >= 2100 && op < 2190) {
+                *buttons |= 0x4000;                       /* CONT_B held */
+                if (op == 2100) arena_oracle_phase("carryB");
+            }
+            if (op >= 2130 && op < 2190) {                /* walk while carrying */
+                *y = -1.0f;
+                if (op == 2130) arena_oracle_phase("carrywalk");
+            }
+            if (op == 2190) arena_oracle_phase("carryrel");
+            /* 2190-2400: observe the release throw + impact, then settle. */
+            /* WINDUP TIMING: a long stationary hold. The goldens want the
+             * windmill clip's index AND how many frames after B-down it starts
+             * (the arena hides the hand bomb on this clip - overlap frames were
+             * feel round 9's bug (d)). 360 polls = 6s, generous. */
+            if (op >= 2400 && op < 2760) {
+                *buttons |= 0x4000;
+                if (op == 2400) arena_oracle_phase("holdlong");
+            }
+            if (op == 2760) arena_oracle_phase("spreadrel");
+            /* 2760-3000: observe the (possibly multi-bomb) release; recovery
+             * buffer in case a near blast tumbles the player. */
+            /* STAND-ON-BOMB: set at the feet, jump STRAIGHT UP, land back on
+             * the bomb. No run-in (a grounded walk-back would KICK it) and the
+             * XZ stays aligned by construction. playerY between the landing
+             * and the fuse-out (~106f after set) is the standing height. */
+            if (op >= 3000 && op < 3004) {
+                *buttons |= 0x0010;                       /* CONT_R: set */
+                if (op == 3000) arena_oracle_phase("setR2");
+            }
+            if (op >= 3040 && op < 3046) {
+                *buttons |= 0x8000;                       /* CONT_A: jump up */
+                if (op == 3040) arena_oracle_phase("jumpon");
+            }
+            /* 3046-3300: land on the bomb, stand until the blast. */
+            if (op == 3300) arena_oracle_phase("DONE");
         }
         return ok;
     }
@@ -815,6 +856,33 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 /* Pulse 2 (after the tumble recovers): MOVING air-set - the
                  * player leaves the second bomb behind, no second tumble. */
                 if (ap12 >= 560 && ap12 < 700) *y = -1.0f;
+            }
+            if (mode && std::atoi(mode) == 13) {
+                /* Round 9 probe: (a) CARRY-WALK - hold B and move; the bridge
+                 * burst-logs the walker's live anim as [carryw] so the gate can
+                 * assert the carry-walk clip plays WITH the frame advancing
+                 * (feet froze in round 9). Hold is 100 polls (~100 ticks),
+                 * safely under TUNE_SPREAD_TICKS (120) - no spread, and any
+                 * windup the WALKER starts on its own clock is welcome
+                 * evidence for the charge-hide. (b) STAND-ON-BOMB - set at the
+                 * feet, jump straight up, land back on the bomb; [pstand]
+                 * (dbg_cam tag 15) samples the final post-drive Pos.y each
+                 * frame. Same trap as mode 10: polls run ~45 ahead of the sim
+                 * tick, everything starts after the 180-tick countdown. */
+                /* POLLS RUN 2:1 AGAINST TICKS (measured: [throw] t241 at cp
+                 * 350 vs [setdbg] t306 at cp 480 - 130 polls = 65 ticks), so
+                 * every window below is twice its tick length. The B hold is
+                 * 100 ticks: past the windup start (62t, golden) so the
+                 * charge-hide fires, still under TUNE_SPREAD_TICKS (120). */
+                static uint32_t cp = 0;
+                cp++;
+                if (cp >= 250 && cp < 450) *buttons |= 0x4000;   /* CONT_B: carry */
+                if (cp >= 280 && cp < 400) *y = -1.0f;           /* ...and walk  */
+                /* release at 450 = forward throw, lands well away */
+                if (cp >= 520 && cp < 532) *buttons |= 0x0010;   /* CONT_R: set  */
+                if (cp >= 570 && cp < 576) *buttons |= 0x8000;   /* CONT_A: jump */
+                /* stand on the bomb until its fuse (~150 ticks after the set)
+                 * blows; [pstand] carries the landing plateau by then */
             }
             if (mode && std::atoi(mode) == 11) {
                 /* THROW probe (v15 impact detonation). Hold B (grab) well past

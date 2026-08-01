@@ -30,6 +30,10 @@ if (-not (Test-Path $exe)) { Write-Error "missing $exe (build first)"; exit 1 }
 
 # -- launch with a CLEAN env (play.ps1 discipline: only ARENA_ORACLE applies) --
 $knobs = @("ARENA_SET_ANIM","ARENA_KICK_ANIM","ARENA_POSE_FRAMES","ARENA_POSE_MOVING",
+           "ARENA_KICK_POSE_FRAMES","ARENA_HIT_ANIM","ARENA_HIT_POSE_FRAMES",
+           "ARENA_AIRSET_ANIM","ARENA_AIRSET_POSE_FRAMES","ARENA_CARRY_IDLE_ANIM",
+           "ARENA_CARRY_WALK_ANIM","ARENA_WINDUP_ANIM","ARENA_WINDUP_START",
+           "ARENA_JUMP_ANIM",
            "ARENA_CAM_DIST","ARENA_CAM_PITCH","ARENA_CAM_YAW","ARENA_CAM_FOLLOW",
            "ARENA_CAM_OFF","ARENA_CAM_ZFAR","ARENA_AUTO_BATTLE","ARENA_ANIM_SWEEP",
            "ARENA_PROBE_AXIS","ARENA_RASTER_N","ARENA_RASTER_STEP","ARENA_ORACLE")
@@ -84,6 +88,11 @@ $nDrop = PhaseN 'dropB';    $nHold   = PhaseN 'holdB'
 $nRel  = PhaseN 'releaseB'; $nSet    = PhaseN 'setR'
 $nWoff = PhaseN 'walkoff';  $nKick   = PhaseN 'kickrun'
 $nJump = PhaseN 'jumpA';    $nAirset = PhaseN 'airsetR'
+# round 9 segments
+$nCarryB = PhaseN 'carryB';   $nCarryW   = PhaseN 'carrywalk'
+$nCarryR = PhaseN 'carryrel'; $nHoldLong = PhaseN 'holdlong'
+$nSpread = PhaseN 'spreadrel'
+$nSet2   = PhaseN 'setR2';    $nJumpOn   = PhaseN 'jumpon'
 
 $anim = $lines | Select-String '\[oracle-anim\] n=(\d+) idx=(\d+) frame=([\d.]+)' |
     ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
@@ -96,10 +105,11 @@ $bomb = $lines | Select-String '\[oracle-bomb\] n=(\d+) slot=(\d+) state=(\d+) p
                                         z = [double]$_.Matches[0].Groups[6].Value } }
 $blast = $lines | Select-String '\[oracle-blast\] n=(\d+)' |
     ForEach-Object { [int]$_.Matches[0].Groups[1].Value }
-$frameLn = $lines | Select-String '\[oracle\] frame n=(\d+) level=(\d+) player=\d+ floorY=([-\d.]+)' |
+$frameLn = $lines | Select-String '\[oracle\] frame n=(\d+) level=(\d+) player=\d+ floorY=([-\d.]+) playerY=([-\d.]+)' |
     ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
                                         level = [int]$_.Matches[0].Groups[2].Value
-                                        floor = [double]$_.Matches[0].Groups[3].Value } }
+                                        floor = [double]$_.Matches[0].Groups[3].Value
+                                        py    = [double]$_.Matches[0].Groups[4].Value } }
 
 # BASELINES. Every clip lookup is "the first clip that is not what the player was
 # already doing", so each verb needs the idx it interrupts measured from its own
@@ -186,6 +196,74 @@ if ($kicked.Count -ge 2) {
     if ($dn -gt 0) { $kickSpeed = [math]::Round($dist / $dn, 2) }
 }
 
+# ---- round 9 extractions ----------------------------------------------------
+# CARRY-WALK: the clip while holding B AND moving, and whether its frame counter
+# ADVANCES (round 9: the arena froze the feet). Baseline = the carry idle from
+# the original stationary hold window (holdIdx).
+$cwWin = @($anim | Where-Object { $_.n -ge $nCarryW -and $_.n -lt $nCarryR })
+$carryWalkIdx = DominantIdx $nCarryW $nCarryR
+$carryWalkAdv = $false
+$cwSame = @($cwWin | Where-Object { $_.idx -eq $carryWalkIdx })
+if ($cwSame.Count -ge 2) {
+    $carryWalkAdv = (($cwSame.fr | Measure-Object -Maximum).Maximum -gt $cwSame[0].fr)
+}
+
+# WINDUP: the windmill loop dominates the TAIL of the long stationary hold; its
+# first appearance minus the hold start is the start offset (the arena's
+# charge-hide must key on the clip, not a timer - overlap frames otherwise).
+# Tail = the last third of the ACTUAL window (the n clock ticks once per FRAME,
+# half the poll rate - a fixed +240 poll offset overshot the window entirely
+# on the first run; measure the instrument).
+$windupIdx = DominantIdx ($nHoldLong + [int](2 * ($nSpread - $nHoldLong) / 3)) $nSpread
+$windupStart = $null
+if ($windupIdx -ge 0 -and $windupIdx -ne $holdIdx -and $windupIdx -ne $idleIdx) {
+    $first = $anim | Where-Object { $_.n -ge $nHoldLong -and $_.n -lt $nSpread -and
+                                    $_.idx -eq $windupIdx } | Select-Object -First 1
+    if ($first) { $windupStart = $first.n - $nHoldLong }
+} else { $windupIdx = $null }
+
+# STAND-ON-BOMB: set at the feet, jump straight up, land back on it. The lift is
+# the playerY plateau (>=8 consecutive samples within 0.5) between the landing
+# and the fuse-out blast, relative to the ground-standing baseline. The XZ gap
+# between the player and the bomb over the same window says whether the player
+# actually came down ON it ("landed beside it" and "clipped through it" have
+# the same playerY).
+$player = $lines | Select-String '\[oracle-player\] n=(\d+) slot=\d+ state=(\d+) pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)' |
+    ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
+                                        st = [int]$_.Matches[0].Groups[2].Value
+                                        x = [double]$_.Matches[0].Groups[3].Value
+                                        y = [double]$_.Matches[0].Groups[4].Value
+                                        z = [double]$_.Matches[0].Groups[5].Value } }
+function XZGap([int]$n0, [int]$n1) {
+    # mean player<->bomb XZ distance over [n0,n1) using per-n pairing
+    $b = @{}; $bomb | Where-Object { $_.n -ge $n0 -and $_.n -lt $n1 } |
+        ForEach-Object { $b[$_.n] = $_ }
+    $gaps = @($player | Where-Object { $_.n -ge $n0 -and $_.n -lt $n1 -and $b.ContainsKey($_.n) } |
+        ForEach-Object { $p = $_; $q = $b[$_.n]
+                         [math]::Sqrt(($p.x-$q.x)*($p.x-$q.x) + ($p.z-$q.z)*($p.z-$q.z)) })
+    if ($gaps.Count -gt 0) { [math]::Round(($gaps | Measure-Object -Average).Average, 1) } else { $null }
+}
+# where does the R-set PLACE the bomb, relative to the setter? (the arena sets
+# at the feet - a mismatch here would make every stand-on choreography miss)
+$setPlaceOffset = XZGap ($nSet2 + 15) ($nSet2 + 30)
+$standBase = ($frameLn | Where-Object { $_.n -ge $nStand -and $_.n -lt $nDrop } |
+              Measure-Object -Property py -Average).Average
+$nBlastS = $blast | Where-Object { $_ -gt $nSet2 } | Select-Object -First 1
+$standLift = $null; $standSupported = $false; $standGap = $null
+if ($null -ne $standBase) {
+    $sWin = @($frameLn | Where-Object { $_.n -ge ($nJumpOn + 10) -and
+                                        ($null -eq $nBlastS -or $_.n -lt $nBlastS) })
+    for ($i = 0; $i -le $sWin.Count - 8; $i++) {
+        $w = $sWin[$i..($i+7)].py
+        if ((($w | Measure-Object -Maximum).Maximum - ($w | Measure-Object -Minimum).Minimum) -lt 0.5) {
+            $standLift = [math]::Round((($w | Measure-Object -Average).Average - $standBase), 1)
+            $standSupported = ($standLift -gt 10.0)
+            $standGap = XZGap $sWin[$i].n ($sWin[$i].n + 16)
+            break
+        }
+    }
+}
+
 $goldens = [ordered]@{
     set_anim_idx           = if ($set)    { $set.idx }       else { $null }
     set_anim_frames        = if ($set)    { $set.frames }    else { $null }
@@ -202,6 +280,16 @@ $goldens = [ordered]@{
     drop_anim_frames       = if ($drop)   { $drop.frames }   else { $null }
     throw_anim_idx         = if ($throw)  { $throw.idx }     else { $null }
     throw_anim_frames      = if ($throw)  { $throw.frames }  else { $null }
+    jump_anim_idx          = $jumpIdx
+    carry_idle_idx         = $holdIdx
+    carry_walk_anim_idx    = $carryWalkIdx
+    carry_walk_advances    = $carryWalkAdv
+    windup_anim_idx        = $windupIdx
+    windup_start_frames    = $windupStart
+    bomb_stand_lift        = $standLift
+    bomb_stand_supported   = $standSupported
+    bomb_stand_xz_gap      = $standGap
+    set_place_offset       = $setPlaceOffset
     bomb_rest_lift         = $restLift
     bomb_rest_from         = $restFrom
     throw_impact_detonates = $impact

@@ -83,6 +83,15 @@ namespace {
      * func_8001C0EC walker gate (§8.23) lets the clip play untouched for the
      * window's duration. */
     int g_pose_anim   = -1;
+
+    /* Round 9: the walker's live anim index, latched every frame by
+     * arena_dbg_anim. -1 until the anim record binds. */
+    int g_walker_anim = -1;
+
+    /* Round 9: an airset pose window is open - when it expires MID-AIR the
+     * bridge restores the jump clip (vanilla shows jump for the rest of the
+     * arc; the walker won't - it grounded ~20 ticks ago on its mini-hop). */
+    bool g_airset_open = false;
     int g_pose_frames = 0;
 
 /* Window length in frames. Default 10 = clip 29's exact length (measured
@@ -133,6 +142,78 @@ static int arena_hit_pose_frames(void) {
         return 24;
     }();
     return n;
+}
+
+/* AIR-SET pose (round 9): the clip a midair set plays — the "laying an egg"
+ * legs-up clip. Defaults are the goldens (airset 51, 8 frames — measured from
+ * the vanilla campaign's airsetR window); ARENA_AIRSET_ANIM /
+ * ARENA_AIRSET_POSE_FRAMES override for probe runs (-1 anim = no pose). */
+static int arena_airset_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_AIRSET_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 51;
+    }();
+    return idx;
+}
+static int arena_airset_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_AIRSET_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 8;
+    }();
+    return n;
+}
+
+/* CARRY clips (round 9): the bridge drives these through the pose window while
+ * player 0 holds a bomb (the walker's own carry is broken in battle - see the
+ * carry pose driver in tick_input). Defaults are the goldens: carry idle 14,
+ * carry walk 17, windup 26 starting 62 frames into the hold - all measured
+ * from the vanilla campaign (carryB/carrywalk/holdlong phases, 2026-08-01). */
+static int arena_carryidle_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_CARRY_IDLE_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 14;
+    }();
+    return idx;
+}
+static int arena_carrywalk_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_CARRY_WALK_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 17;
+    }();
+    return idx;
+}
+static int arena_windup_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_WINDUP_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 26;
+    }();
+    return idx;
+}
+static int arena_windup_start_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_WINDUP_START");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 600) return k; }
+        return 62;
+    }();
+    return n;
+}
+/* The walker's jump clip (goldens jump_anim_idx, baseline 6): restored after
+ * an airset pose expires mid-air, because nothing else will - the walker's
+ * own state machine grounded ~20 ticks earlier (its mini-hop) and never
+ * re-asserts while the sim arc is still flying. Without the restore the
+ * 8-frame airset clip persisted 26 frames (gate red, 2026-08-01). */
+static int arena_jump_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_JUMP_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 6;
+    }();
+    return idx;
 }
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
@@ -238,6 +319,64 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_render_dz  = qf(after.z - before.z) * g_scale_z;
     g_render_yaw = (float)g_state.players[0].yaw * (360.0f / 65536.0f);
 
+    /* AIRSET tail (round 9): when the airset window is about to expire while
+     * the sim is still airborne, hand the body back to the JUMP clip for the
+     * rest of the arc - vanilla does exactly this, and nobody else will (the
+     * walker's own mini-hop grounded long ago and it re-asserts nothing until
+     * its next state transition; the 8-frame clip persisted 26 frames). A
+     * 2-frame budget = a single trigger, then the walker resumes on landing. */
+    if (g_airset_open && g_pose_frames == 0) {
+        /* == 0, not <= 1: at 1 the clip still owes its last display frame
+         * (restoring there showed 7 of the golden 8). At 0 the window has
+         * fully closed - and the clip persists anyway (nothing stomps it,
+         * that's this block's reason to exist), so the handover loses
+         * nothing. */
+        g_airset_open = false;
+        /* only if the window still holds the airset clip - a longer edge pose
+         * (the hit clip, say) may have stomped it, and then ITS ending owns
+         * the handover */
+        if (g_pose_anim == arena_airset_anim_index()
+            && g_state.players[0].pos.y > 0 && arena_jump_anim_index() >= 0) {
+            g_pose_anim   = arena_jump_anim_index();
+            g_pose_frames = 2;
+        }
+    }
+
+    /* CARRY pose driver (round 9). The walker's OWN carry aborts every frame in
+     * battle - its pool bomb (gObjects[2..5]) dies to the per-frame sweep, so
+     * the carry state machine re-triggers the pickup clip (41) endlessly:
+     * frame counter pinned at 2, feet frozen ([carryw] evidence, 2026-08-01).
+     * The architecture answer is the same as position/facing: the walker is a
+     * PUPPET - the bridge drives the carry clips through the pose window, all
+     * values from the vanilla goldens: carry idle 14, carry walk 17, and the
+     * windup 26 from 62 frames into the hold (windup_start_frames; the sim
+     * timer ticks 1:1 with frames). A rolling 2-frame top-up keeps the window
+     * open while held and lets it close right after release, so the release
+     * pose (throw/set) can take over; this block runs BEFORE the bomb-edge
+     * scan below so a same-tick edge pose wins the latch. */
+    if (g_state.players[0].held_bomb
+        && g_state.players[0].state != PSTATE_TUMBLE
+        && g_state.players[0].state != PSTATE_DEAD
+        /* an EDGE pose in flight (budget > the carry top-up of 2: airset 8,
+         * set 10, kick 18, hit 24) keeps the window - carry resumes after */
+        && g_pose_frames <= 2) {
+        int   timer  = (int)g_state.players[0].timer;
+        float cvx    = qf(g_state.players[0].vel.x);
+        float cvz    = qf(g_state.players[0].vel.z);
+        bool  moving = (cvx * cvx + cvz * cvz) >= 0.0025f;
+        int want;
+        if (timer >= arena_windup_start_frames()) want = arena_windup_anim_index();
+        else                                      want = moving ? arena_carrywalk_anim_index()
+                                                                : arena_carryidle_anim_index();
+        if (want >= 0) {
+            g_pose_anim   = want;
+            g_pose_frames = 2;   /* survives this frame's dbg_anim decrement, so
+                                  * next frame's walker gate still drops the
+                                  * broken 41 re-trigger; closes 1 frame after
+                                  * release so the walker's own throw clip lands */
+        }
+    }
+
     /* A1.4: latch a set edge for each player whose bomb went FREE->SETTLED this
      * tick (the set-placement transition). arena_set_new(i) reads-and-clears. */
     for (int b = 0; b < ARENA_MAX_BOMBS; b++) {
@@ -250,6 +389,23 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                 std::fprintf(g_log, "[throw] t%u bomb=%d owner=%d\n",
                              g_state.tick, b, (int)g_state.bombs[b].owner);
                 std::fflush(g_log);
+            }
+        }
+        /* AIR-SET pose (round 9): a midair set goes FREE->FALLING (v17), never
+         * FREE->SETTLED, so the set-pose latch below can't see it and the jump
+         * clip just kept playing. Vanilla plays a short legs-up clip (goldens:
+         * airset 51, 8 frames). No standing check - the player is airborne by
+         * definition, and vanilla plays it mid-jump. */
+        if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_FALLING) {
+            if (g_state.bombs[b].owner == 0) {
+                g_pose_anim   = arena_airset_anim_index();
+                g_pose_frames = arena_airset_pose_frames();
+                g_airset_open = true;
+                if (g_log) {
+                    std::fprintf(g_log, "[airpose] idx=%d frames=%d t%u\n",
+                                 g_pose_anim, g_pose_frames, g_state.tick);
+                    std::fflush(g_log);
+                }
             }
         }
         if (g_bomb_prev_state[b] == BSTATE_FREE && now == BSTATE_SETTLED) {
@@ -536,10 +692,33 @@ extern "C" int arena_bomb_active(int i) {
     /* Round 8: once the hold crosses TUNE_SPREAD_TICKS the walker is
      * windmilling the spread charge - the bomb is no longer IN the hands
      * (vanilla hides it there too), so hide the held actor for the charge.
-     * It reappears as the thrown fan at release. */
+     * It reappears as the thrown fan at release.
+     *
+     * Round 9: the timer alone left OVERLAP frames - the walker starts its
+     * windup clip on its OWN clock, which can run ahead of the sim's 120-tick
+     * arm, and those frames drew both the hand bomb and the windmill. Player
+     * 0's hide now also keys on the walker's LIVE anim (g_walker_anim, latched
+     * every frame): the moment the windup clip is up, the hand bomb is gone -
+     * synced by construction. Puppets 1-3 have no walker; the timer covers
+     * them. */
     if (g_state.bombs[i].state == BSTATE_HELD) {
         int o = g_state.bombs[i].owner;
         if (g_state.players[o].timer >= TUNE_SPREAD_TICKS) return 0;
+        if (o == 0 && arena_windup_anim_index() >= 0
+                   && g_walker_anim == arena_windup_anim_index()) {
+            if (g_log) {
+                static int logged = 0;   /* first hide only - one evidence line
+                                          * is all the gate needs, and the hide
+                                          * re-tests every frame of every hold */
+                if (!logged) { std::fprintf(g_log, "[chargehide] anim=%d tm=%d t%u\n",
+                                            g_walker_anim,
+                                            (int)g_state.players[o].timer,
+                                            g_state.tick);
+                               std::fflush(g_log); }
+                logged = 1;
+            }
+            return 0;
+        }
     }
     return g_state.bombs[i].state != BSTATE_FREE ? 1 : 0;
 }
@@ -682,6 +861,34 @@ extern "C" int arena_set_new(int i) {
 extern "C" void arena_dbg_anim(int idx, int frame, int state) {
     static int last  = -1;
     static int burst = 0;
+    /* Round 9: latch the walker's LIVE anim index every frame. The charge-hide
+     * (arena_bomb_active) keys on it - the walker starts its windup clip on
+     * its own clock, and the sim-timer threshold alone left overlap frames
+     * where both the hand bomb and the windmill drew. */
+    g_walker_anim = idx;
+
+    /* Round 9 [carryw]: locomotion-while-carrying evidence ("feet don't move
+     * while holding the bomb"). While player 0 carries AND moves, log the live
+     * anim, bounded per hold episode so a soak can't flood the log. */
+    {
+        static int  cw_budget    = 0;
+        static bool cw_prev_held = false;
+        bool held = g_state.players[0].held_bomb != 0;
+        if (held && !cw_prev_held) cw_budget = 90;
+        cw_prev_held = held;
+        if (held && cw_budget > 0) {
+            float vx = qf(g_state.players[0].vel.x);
+            float vz = qf(g_state.players[0].vel.z);
+            if (vx * vx + vz * vz > 0.0025f) {   /* same bar as the set pose's standing check */
+                cw_budget--;
+                if (g_log) {
+                    std::fprintf(g_log, "[carryw] idx=%d frame=%d state=%d\n",
+                                 idx, frame, state);
+                    std::fflush(g_log);
+                }
+            }
+        }
+    }
     /* 20, was 8: oracle-gate's full-clip checks COUNT these lines against the
      * golden clip lengths (kick = 18), and an 8-line burst capped the count at
      * 8 regardless of what actually played - the gate's first red was the
@@ -763,7 +970,11 @@ extern "C" void arena_oracle_frame(int level, int playerValid, int floorYbits, i
     g_oracle_seen = true;
     g_oracle_n++;
     union { int i; float f; } fy, py; fy.i = floorYbits; py.i = playerYbits;
-    if (g_log && (g_oracle_n % 30u) == 1u) {
+    /* UNTHROTTLED as of round 9 (was 1-in-30): playerY is the stand-on-bomb
+     * golden's channel, and the standing plateau between the landing and the
+     * ~106-frame fuse-out is too short for a 30-frame sample cadence.
+     * [oracle-anim] already logs every frame, so the volume has precedent. */
+    if (g_log) {
         std::fprintf(g_log, "[oracle] frame n=%u level=%d player=%d floorY=%.2f playerY=%.2f\n",
                      g_oracle_n, level, playerValid, fy.f, py.f);
         std::fflush(g_log);
@@ -791,8 +1002,10 @@ extern "C" void arena_oracle_obj(int slot_state, int xbits, int ybits, int zbits
     int slot = (slot_state >> 16) & 0xFFFF, st = slot_state & 0xFFFF;
     union { int i; float f; } x, y, z; x.i = xbits; y.i = ybits; z.i = zbits;
     if (g_log) {
+        /* 0xFE = the player (round 9; see the patch's oracle block) */
+        const char* kind = (slot == 0xFE) ? "player" : (slot >= 6 ? "blast" : "bomb");
         std::fprintf(g_log, "[oracle-%s] n=%u slot=%d state=%d pos=(%.1f,%.1f,%.1f)\n",
-                     slot >= 6 ? "blast" : "bomb", g_oracle_n, slot, st, x.f, y.f, z.f);
+                     kind, g_oracle_n, slot, st, x.f, y.f, z.f);
         std::fflush(g_log);
     }
 }
@@ -1312,9 +1525,12 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     /* mode 8 (direction probe) reuses this logger for the facing check. */
     static const bool  airset = (mode != nullptr &&
                                  (std::atoi(mode) == 12 || std::atoi(mode) == 11));
+    /* mode 13 (round 9): stand-on-bomb probe - tag 13 is the post-drive Pos.y
+     * sample the [ydrive] channel uses; here it becomes the landing evidence. */
+    static const bool  pstand = (mode != nullptr && std::atoi(mode) == 13);
     static const bool  armed = (mode != nullptr &&
                                 (std::atoi(mode) == 6 || std::atoi(mode) == 8 ||
-                                 std::atoi(mode) == 9)) || airset;
+                                 std::atoi(mode) == 9)) || airset || pstand;
     static const bool  turnprobe = (mode != nullptr && std::atoi(mode) == 9);
     if (!armed) return;
 
@@ -1357,6 +1573,22 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
             }
         }
         return;   /* mode 12 wants only this channel; skip the mode-6 loggers */
+    }
+    if (pstand) {
+        /* [pstand]: player 0's FINAL Pos.y each frame (post Y-drive; xbits) vs
+         * the sim's y (ybits), with the walker's actionState (zbits). Landing
+         * on a bomb actor shows as a plateau; its VALUE against the vanilla
+         * bomb_stand_lift golden is the whole question (round 9: "way high"). */
+        if (tag == 13 && g_log) {
+            static int pn = 0;
+            if ((++pn % 2) == 0) {
+                union { int i; float f; } gy, sy; gy.i = xbits; sy.i = ybits;
+                std::fprintf(g_log, "[pstand] f%04d gameY=%.1f simY=%.3f state=%d\n",
+                             pn, (double)gy.f, (double)sy.f, zbits);
+                std::fflush(g_log);
+            }
+        }
+        return;   /* mode 13 wants only this channel */
     }
     if (tag < 0 || tag > 11) return;
 
