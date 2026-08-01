@@ -146,6 +146,18 @@ if ($Soak -gt 0 -or $AnimProbe) {
     }
 
     if ($totalFails -ne 0) { Fail "$totalFails soak/probe failure(s) - do NOT hand this build over" }
+
+    # Objective feel checks: this build against the vanilla game's OWN numbers
+    # (tools\oracle\goldens.json, produced by tools\oracle.ps1). Three more boots.
+    $goldens = Join-Path $root "tools\oracle\goldens.json"
+    if (Test-Path $goldens) {
+        Write-Host "`n=== oracle gate (goldens vs this build) ==="
+        & powershell -ExecutionPolicy Bypass -File (Join-Path $root "tools\oracle-gate.ps1")
+        if ($LASTEXITCODE -ne 0) { Fail "oracle-gate FAILED" }
+    } else {
+        Write-Host "[oracle-gate] SKIPPED - no tools\oracle\goldens.json yet"
+    }
+
     Write-Host "`nSOAK GREEN - this exact build is cleared for handoff." -ForegroundColor Green
 }
 exit 0

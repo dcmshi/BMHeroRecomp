@@ -833,17 +833,18 @@ extern "C" int arena_anim_sweep_index(void) {
 }
 
 /* Set pose index; ARENA_SET_ANIM overrides (-1 = no pose, keep locomotion).
- * DEFAULT 29 = the game's own drop clip: the drop handler plays it
- * (func_80282E5C_code_extra_0, m2c 2026-07-30: func_8001C0EC(0,0,0x1D,1,
- * D_80115808)), and the front-view motion strips show a step-and-reach-DOWN
- * place — the old "reads as a throw" call was a far/back-camera artifact
- * (tools/anims/strips/). 41 (the contact-sheet pick) is a near-static stand;
- * the 2026-07-30 feel test flagged it. 41/42 remain reachable by env. */
+ * DEFAULT 31 = what the GAME itself plays on an R-set, measured by the
+ * single-player oracle (tools/oracle/goldens.json: set_anim_idx=31, 10 frames;
+ * spec 2026-08-01). It was 29, read statically out of the drop handler
+ * (func_80282E5C_code_extra_0) — the oracle shows 29 is the THROW clip: it is
+ * what a tap-B and a B-release both play (throw_anim_idx=29), while a stationary
+ * set plays 31. Runtime composition beats a static decomp read.
+ * 29/41/42 remain reachable by env. */
 extern "C" int arena_set_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_SET_ANIM");
         if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
-        return 29;
+        return 31;
     }();
     return idx;
 }
@@ -855,16 +856,17 @@ extern "C" int arena_pose_anim(void) {
 }
 
 /* Kick pose index; ARENA_KICK_ANIM overrides (-1 = NO pose, keep locomotion).
- * DEFAULT -1 = authentic: the real game plays NO kick anim — the walk-in kick
- * is 100% bomb-side (§8.5c: zero anim calls in 69AA0.c), the bomb shooting
- * away IS the feedback. The 2026-07-30 front-view strips confirmed 32/33 are
- * crouch/react clips, not kicks (tools/anims/strips/); both stay reachable by
- * env for comparison. */
+ * DEFAULT 33 = what the GAME plays when Hero runs into a set bomb, measured by
+ * the single-player oracle (goldens kick_anim_idx=33, 18 frames; the clip starts
+ * ~8 frames BEFORE the bomb starts sliding). -1 was the old default, on §8.5c's
+ * static reading that the walk-in kick has no animation at all (zero anim calls
+ * in 69AA0.c) — that reading was wrong about the composed runtime: the walker
+ * plays 33 on contact. -1 stays reachable by env. */
 extern "C" int arena_kick_anim_index(void) {
     static const int idx = []() {
         const char* v = std::getenv("ARENA_KICK_ANIM");
         if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
-        return -1;
+        return 33;
     }();
     return idx;
 }

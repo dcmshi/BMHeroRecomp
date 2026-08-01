@@ -36,16 +36,18 @@ param([int]$N = 10, [int]$TimeoutSec = 75, [switch]$Probe, [switch]$AnimProbe,
 #
 # -AnimProbe asserts the set pose is showing AND ANIMATING 12 frames after the
 # set edge (frame counter risen to 24 by then, +2/frame):
-#   -Mode 4 -Rising '\[animw\] \+\d+ idx=29 frame=(\d+)'
+#   -Mode 4 -Rising '\[animw\] \+\d+ idx=31 frame=(\d+)'
 #
 # History: the -Rising form was retired 2026-07-27 as impossible — the walker
 # re-asserted its own anim every frame, so holding required re-triggering, which
 # pinned the counter at 0. Since 2026-07-30 the func_8001C0EC walker gate
 # (integration notes §8.23) lets the clip PLAY, so the honest gate is achievable
-# again and is the default. idx 29 = the game's own drop clip (§8.5c + the
-# 2026-07-30 front-view strips); ARENA_SET_ANIM overrides need a matching
-# explicit -Rising/-Expect.
-if ($AnimProbe -and -not $Expect -and -not $Rising) { $Rising = '\[animw\] \+\d+ idx=29 frame=(\d+)' }
+# again and is the default. idx 31 = the game's own R-set clip, measured by the
+# single-player oracle (tools\oracle\goldens.json; it was 29 until 2026-08-01,
+# which the oracle showed is the THROW clip); ARENA_SET_ANIM overrides need a
+# matching explicit -Rising/-Expect. The golden-driven version of this check
+# lives in tools\oracle-gate.ps1, which reads the index from the goldens.
+if ($AnimProbe -and -not $Expect -and -not $Rising) { $Rising = '\[animw\] \+\d+ idx=31 frame=(\d+)' }
 if ($AnimProbe -and $Mode -eq 0)  { $Mode = 4 }
 if ($Probe     -and $Mode -eq 0)  { $Mode = 3 }
 if ($Mode -eq 0) { $Mode = 1 }
