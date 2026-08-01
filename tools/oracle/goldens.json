@@ -5,6 +5,7 @@
     "kick_anim_idx":  33,
     "kick_anim_frames":  18,
     "kick_slide":  true,
+    "kick_slide_speed":  17.89,
     "airset_anim_idx":  51,
     "airset_anim_frames":  8,
     "hit_anim_idx":  43,
@@ -24,7 +25,7 @@
                       "fun / overall feel"
                   ],
     "provenance":  {
-                       "fork_commit":  "ad55163",
+                       "fork_commit":  "0490ff9",
                        "date":  "2026-08-01",
                        "level":  0
                    }

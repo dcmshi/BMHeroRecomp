@@ -173,12 +173,17 @@ $hit = $null
 if ($nBlastA) { $hit = ClipAfter $nBlastA @($idleIdx, $jumpIdx) }
 
 # kick: does the bomb SLIDE off (arena behaviour) or detonate on contact?
+# And how FAST (round 8: the arena's kick was slower than running, so the
+# kicker caught up and pushed the bomb) - Hero units per frame over the slide.
 $nBlastK = $blast | Where-Object { $_ -gt $nKick } | Select-Object -First 1
-$kickSlide = $false
+$kickSlide = $false; $kickSpeed = $null
 $kicked = @($bomb | Where-Object { $_.n -ge $nKick -and ($null -eq $nBlastK -or $_.n -lt $nBlastK) })
 if ($kicked.Count -ge 2) {
     $dx = $kicked[-1].x - $kicked[0].x; $dz = $kicked[-1].z - $kicked[0].z
-    $kickSlide = ([math]::Sqrt($dx*$dx + $dz*$dz) -gt 100.0)
+    $dist = [math]::Sqrt($dx*$dx + $dz*$dz)
+    $kickSlide = ($dist -gt 100.0)
+    $dn = $kicked[-1].n - $kicked[0].n
+    if ($dn -gt 0) { $kickSpeed = [math]::Round($dist / $dn, 2) }
 }
 
 $goldens = [ordered]@{
@@ -188,6 +193,7 @@ $goldens = [ordered]@{
     kick_anim_idx          = if ($kick)   { $kick.idx }      else { $null }
     kick_anim_frames       = if ($kick)   { $kick.frames }   else { $null }
     kick_slide             = $kickSlide
+    kick_slide_speed       = $kickSpeed
     airset_anim_idx        = if ($airset) { $airset.idx }    else { $null }
     airset_anim_frames     = if ($airset) { $airset.frames } else { $null }
     hit_anim_idx           = if ($hit)    { $hit.idx }       else { $null }

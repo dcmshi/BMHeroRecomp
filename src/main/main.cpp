@@ -851,8 +851,14 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 kp++;
                 if      (kp > 30  && kp < 245) *y =  0.0f;       /* wait out the countdown */
                 else if (kp >= 250 && kp < 262) *buttons |= 0x0010;   /* set (~tick 210, R) */
-                else if (kp >= 270 && kp < 312) *y = -1.0f;      /* walk clear (drops setter grace) */
-                else if (kp >= 315 && kp < 460) *y =  1.0f;      /* walk back in -> kick */
+                /* Directions FLIPPED for v18 (kick 0.165): the old walk-back
+                 * kicked the bomb at the NEAR wall (2.4 su = a 15-tick flight)
+                 * with the kicker walking into the blast - the tumble's hit
+                 * pose stole the kick clip at frame 15/18. Kick toward the
+                 * OPEN side instead (13 su of room; the far blast lands on a
+                 * puppet, well clear of the kicker and the pose window). */
+                else if (kp >= 270 && kp < 312) *y =  1.0f;      /* walk clear, toward the near wall */
+                else if (kp >= 315 && kp < 460) *y = -1.0f;      /* walk back in -> kick into the open */
             }
             if (mode && mode[0] == '9') {
                 /* TURN probe: run, STOP COMPLETELY, then run the opposite way.

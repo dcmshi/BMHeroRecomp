@@ -533,6 +533,14 @@ extern "C" void arena_dbg_u32(int tag, unsigned val) {
  * arc shows (unlike players, whose Y is left to the game). */
 extern "C" int arena_bomb_active(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return 0;
+    /* Round 8: once the hold crosses TUNE_SPREAD_TICKS the walker is
+     * windmilling the spread charge - the bomb is no longer IN the hands
+     * (vanilla hides it there too), so hide the held actor for the charge.
+     * It reappears as the thrown fan at release. */
+    if (g_state.bombs[i].state == BSTATE_HELD) {
+        int o = g_state.bombs[i].owner;
+        if (g_state.players[o].timer >= TUNE_SPREAD_TICKS) return 0;
+    }
     return g_state.bombs[i].state != BSTATE_FREE ? 1 : 0;
 }
 /* HELD bombs render at the vanilla CARRY ANCHOR, straight from the decomp's
