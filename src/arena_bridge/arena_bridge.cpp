@@ -592,6 +592,70 @@ extern "C" void arena_dbg_blast(int k, int slot, int wrbits) {
     }
 }
 
+/* ---- Single-player oracle (spec 2026-08-01) ---------------------------- */
+/* One monotonic counter n stamps every oracle line: it ticks once per game
+ * frame (arena_oracle_frame runs FIRST in the patch's oracle block), so all
+ * timing goldens live in one clock regardless of which channel logged them. */
+static bool     g_oracle_seen = false;
+static unsigned g_oracle_n    = 0;
+
+extern "C" int arena_oracle_mode(void) {
+    static const bool on = []() {
+        const char* v = std::getenv("ARENA_ORACLE");
+        return v && v[0] == '1'; }();
+    return on ? 1 : 0;
+}
+extern "C" int arena_oracle_seen(void) { return g_oracle_seen ? 1 : 0; }
+
+extern "C" void arena_oracle_phase(const char* name) {
+    if (!arena_oracle_mode()) return;
+    ensure_init();
+    if (g_log) { std::fprintf(g_log, "[oracle] phase=%s n=%u\n", name, g_oracle_n);
+                 std::fflush(g_log); }
+}
+
+/* Heartbeat: in-level signal (mash-stop) + floor/player Y from the game's own
+ * ground query. Logged 1-in-30 (readable log); n ticks EVERY call. */
+extern "C" void arena_oracle_frame(int level, int playerValid, int floorYbits, int playerYbits) {
+    if (!arena_oracle_mode()) return;
+    ensure_init();
+    g_oracle_seen = true;
+    g_oracle_n++;
+    union { int i; float f; } fy, py; fy.i = floorYbits; py.i = playerYbits;
+    if (g_log && (g_oracle_n % 30u) == 1u) {
+        std::fprintf(g_log, "[oracle] frame n=%u level=%d player=%d floorY=%.2f playerY=%.2f\n",
+                     g_oracle_n, level, playerValid, fy.f, py.f);
+        std::fflush(g_log);
+    }
+}
+
+/* Player anim, every frame while in-level (the parser needs the frame ramp to
+ * measure clip length). frame is f32 bits (func_8001B62C returns f32). */
+extern "C" void arena_oracle_anim(int idx, int framebits, int state) {
+    if (!arena_oracle_mode()) return;
+    union { int i; float f; } fr; fr.i = framebits;
+    if (g_log) {
+        std::fprintf(g_log, "[oracle-anim] n=%u idx=%d frame=%.1f state=%d\n",
+                     g_oracle_n, idx, fr.f, state);
+        std::fflush(g_log);
+    }
+}
+
+/* Game object watch. slot_state = (slot << 16) | (actionState & 0xFFFF).
+ * Slots 2..5 = the game's bomb pool -> [oracle-bomb]; 6..13 = the explosion
+ * pool (func_8007E76C spawns there) -> [oracle-blast]. The patch only reports
+ * ACTIVE objects, so lines are sparse. */
+extern "C" void arena_oracle_obj(int slot_state, int xbits, int ybits, int zbits) {
+    if (!arena_oracle_mode()) return;
+    int slot = (slot_state >> 16) & 0xFFFF, st = slot_state & 0xFFFF;
+    union { int i; float f; } x, y, z; x.i = xbits; y.i = ybits; z.i = zbits;
+    if (g_log) {
+        std::fprintf(g_log, "[oracle-%s] n=%u slot=%d state=%d pos=(%.1f,%.1f,%.1f)\n",
+                     slot >= 6 ? "blast" : "bomb", g_oracle_n, slot, st, x.f, y.f, z.f);
+        std::fflush(g_log);
+    }
+}
+
 /* A1.5: arena centre in Hero world coords, for gView.at.
  *
  * Deliberately reuses the SAME frozen-origin mapping as the puppets: if the

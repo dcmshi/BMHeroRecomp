@@ -127,3 +127,7 @@ arena_export_dbg_blast = 0x8F000240;
 arena_export_cam_yaw_deg = 0x8F000244;
 arena_export_cam_yaw_eff_sin = 0x8F000248;
 arena_export_cam_yaw_eff_cos = 0x8F00024C;
+arena_export_oracle_mode  = 0x8F000250;
+arena_export_oracle_frame = 0x8F000254;
+arena_export_oracle_anim  = 0x8F000258;
+arena_export_oracle_obj   = 0x8F00025C;

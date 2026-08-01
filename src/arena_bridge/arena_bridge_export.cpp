@@ -246,3 +246,20 @@ extern "C" void arena_export_match_phase(uint8_t* rdram, recomp_context* ctx) { 
 extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_x()); }
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }
+
+/* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
+extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_oracle_mode());
+}
+extern "C" void arena_export_oracle_frame(uint8_t* rdram, recomp_context* ctx) {
+    arena_oracle_frame(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                       _arg<2, int>(rdram, ctx), _arg<3, int>(rdram, ctx));
+}
+extern "C" void arena_export_oracle_anim(uint8_t* rdram, recomp_context* ctx) {
+    arena_oracle_anim(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                      _arg<2, int>(rdram, ctx));
+}
+extern "C" void arena_export_oracle_obj(uint8_t* rdram, recomp_context* ctx) {
+    arena_oracle_obj(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                     _arg<2, int>(rdram, ctx), _arg<3, int>(rdram, ctx));
+}

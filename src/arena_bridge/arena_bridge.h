@@ -104,6 +104,16 @@ float arena_cam_yaw_eff_cos(void); /* cos(yaw + 90deg) */
 float arena_cam_pitch_sin(void);
 float arena_cam_pitch_cos(void);
 int   arena_anim_sweep_index(void);/* ARENA_ANIM_SWEEP=<ticks>; -1 = off */
+/* Single-player oracle (spec 2026-08-01): ARENA_ORACLE=1 boots VANILLA
+ * campaign with per-frame probes; goldens are extracted from the log.
+ * Native owns all gating/throttling and the shared frame counter n; the
+ * patch calls unconditionally and stays stateless. Floats cross as BITS. */
+int   arena_oracle_mode(void);    /* 1 iff ARENA_ORACLE=1 (cached) */
+int   arena_oracle_seen(void);    /* 1 once the in-level routine has run (mash-stop) */
+void  arena_oracle_phase(const char* name);  /* main.cpp phase markers -> log */
+void  arena_oracle_frame(int level, int playerValid, int floorYbits, int playerYbits);
+void  arena_oracle_anim(int idx, int framebits, int state);
+void  arena_oracle_obj(int slot_state, int xbits, int ybits, int zbits);
 #ifdef __cplusplus
 }
 #endif
