@@ -86,5 +86,13 @@ $yd = @($m12 | Select-String '\[ydrive\] .* drivenY=([\d.]+)' | ForEach-Object {
 $peak = if ($yd.Count) { ($yd | Measure-Object -Maximum).Maximum } else { 0 }
 Check "jump: visible Y flies the sim arc" ($peak -ge 420) "peak drivenY=$peak (floor 240, sim apex ~494)"
 
+# --- check 9: the stun plays the game's own HIT clip (round 7) ----------------
+# Mode 12's second air-set bomb settles at the probe's feet and fuses out; the
+# blast tumbles the player, whose pose must be the golden hit clip - free, from
+# the same mode-12 boot as checks 7-8.
+$hitLines = @($m12 | Select-String "\[anim\] idx=$($g.hit_anim_idx) frame=(\d+)")
+Check "stun plays the hit clip" ((Advanced $hitLines) -and ([math]::Abs($hitLines.Count - $g.hit_anim_frames) -le 3)) `
+      "golden idx=$($g.hit_anim_idx) x$($g.hit_anim_frames), saw $($hitLines.Count) frames"
+
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

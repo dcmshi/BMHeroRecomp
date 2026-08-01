@@ -114,6 +114,27 @@ static int arena_kick_pose_frames(void) {
     return n;
 }
 
+/* HIT/tumble pose (round 7): the sim owns the stun, so the game never plays
+ * its own hit reaction - the player showed LOCOMOTION while stunned. Clip 43
+ * x 24 frames = the game's own hit reaction, measured by the oracle (the
+ * air-set bomb fuses out at the setter's feet; goldens hit_anim_*). */
+static int arena_hit_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_HIT_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 43;
+    }();
+    return idx;
+}
+static int arena_hit_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_HIT_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 24;
+    }();
+    return n;
+}
+
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
     void ensure_init() {
@@ -282,6 +303,28 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         g_bomb_prev_state[b] = now;
     }
 
+    /* HIT pose (round 7): the sim owns the stun (game damage is suppressed),
+     * so nothing ever played the hit reaction - the player showed locomotion
+     * while stunned. On the TUMBLE edge, play the game's own hit clip through
+     * the same walker-gate pose window as set/kick. */
+    {
+        static uint8_t prev_p0 = PSTATE_IDLE;
+        uint8_t p0 = g_state.players[0].state;
+        if (p0 == PSTATE_TUMBLE && prev_p0 != PSTATE_TUMBLE) {
+            int idx = arena_hit_anim_index();
+            if (idx >= 0) {
+                g_pose_anim   = idx;
+                g_pose_frames = arena_hit_pose_frames();
+                if (g_log) {
+                    std::fprintf(g_log, "[hitpose] idx=%d frames=%d t%u\n",
+                                 g_pose_anim, g_pose_frames, g_state.tick);
+                    std::fflush(g_log);
+                }
+            }
+        }
+        prev_p0 = p0;
+    }
+
     /* A1.2b diag: are the sim's players 1-3 holding their corners, or does the
      * convergence come from the game's object update? Log all 4 once a second. */
     static uint32_t n = 0;
@@ -292,7 +335,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
              * death creeps the walls in, and a dead player simply stops. Without
              * these the log shows a position that stops changing and nothing
              * about why. */
-            "[simpos] t%u ph=%d shr=%d alive=%d st0=%d p0(%.2f,%.2f) p1(%.2f,%.2f) "
+            "[simpos] t%u ph=%d shr=%d alive=%d st0=%d hp0=%d tm0=%d p0(%.2f,%.2f) p1(%.2f,%.2f) "
             "p2(%.2f,%.2f) p3(%.2f,%.2f)\n",
             g_state.tick,
             (int)g_state.phase, (int)g_state.shrink_step,
@@ -301,6 +344,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                   (g_state.players[2].state != PSTATE_DEAD) +
                   (g_state.players[3].state != PSTATE_DEAD)),
             (int)g_state.players[0].state,
+            (int)g_state.players[0].hp, (int)g_state.players[0].timer,
             qf(g_state.players[0].pos.x), qf(g_state.players[0].pos.z),
             qf(g_state.players[1].pos.x), qf(g_state.players[1].pos.z),
             qf(g_state.players[2].pos.x), qf(g_state.players[2].pos.z),
@@ -491,19 +535,27 @@ extern "C" int arena_bomb_active(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return 0;
     return g_state.bombs[i].state != BSTATE_FREE ? 1 : 0;
 }
+/* HELD bombs render at the vanilla CARRY ANCHOR, straight from the decomp's
+ * carry handler (69AA0.c func_8007A938):
+ *   x = player.x + sin(Rot.y) * 32     (32 units IN FRONT, along facing)
+ *   z = player.z + cos(Rot.y) * 32
+ *   y = player.y + 50                  (hands height)
+ * Round 6 shipped the 50 without the 32 and the bomb sat INSIDE the torso -
+ * "holding empty air" (round 7). Rot.y = 180 - sim yaw (the A1.2e mapping). */
+static float held_rot_rad(int o) {
+    return (180.0f - arena_puppet_yaw(o)) * 0.017453292f;
+}
 extern "C" float arena_bomb_wx(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_x;
+    if (g_state.bombs[i].state == BSTATE_HELD) {
+        int o = g_state.bombs[i].owner;
+        return g_origin_x + (qf(g_state.players[o].pos.x) - g_ref_sx) * g_scale
+               + std::sin(held_rot_rad(o)) * 32.0f;
+    }
     return g_origin_x + (qf(g_state.bombs[i].pos.x) - g_ref_sx) * g_scale;
 }
 extern "C" float arena_bomb_wy(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y + BOMB_MESH_REST_LIFT;
-    /* HELD: render at the owner's HANDS. The sim tracks a held bomb at
-     * head height (owner y + PLAYER_HEIGHT, 120 world units) and the rest
-     * lift added another 30, which drew it ON Bomberman's head (feel round
-     * 6). The vanilla game's held bomb sits 50 units above the player's
-     * feet - measured from the oracle's holdB window ([oracle-bomb] y=50.0
-     * with playerY=0.00) - so hands = owner feet + 50, render-side only
-     * (the sim's tracking height is hash-covered and gameplay-neutral). */
     if (g_state.bombs[i].state == BSTATE_HELD) {
         int o = g_state.bombs[i].owner;
         float feet = qf(g_state.players[o].pos.y);
@@ -527,6 +579,11 @@ extern "C" float arena_bomb_wy(int i) {
 }
 extern "C" float arena_bomb_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_z;
+    if (g_state.bombs[i].state == BSTATE_HELD) {
+        int o = g_state.bombs[i].owner;
+        return g_origin_z + (qf(g_state.players[o].pos.z) - g_ref_sz) * g_scale_z
+               + std::cos(held_rot_rad(o)) * 32.0f;
+    }
     return g_origin_z + (qf(g_state.bombs[i].pos.z) - g_ref_sz) * g_scale_z;
 }
 extern "C" void arena_bomb_set_slot(int i, int slot) { if (i >= 0 && i < ARENA_MAX_BOMBS) g_bomb_slot[i] = slot; }
@@ -621,7 +678,7 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
      * golden clip lengths (kick = 18), and an 8-line burst capped the count at
      * 8 regardless of what actually played - the gate's first red was the
      * logger's bound, not the clip (2026-08-01; measure the instrument first). */
-    if (idx != last) { last = idx; burst = 20; }
+    if (idx != last) { last = idx; burst = 28; }   /* 28: covers the 24-frame hit clip */
 
     /* Two logs, deliberately.
      *

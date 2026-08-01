@@ -801,17 +801,20 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                  * ~45 ahead of the sim tick, §8.22). */
                 static uint32_t ap12 = 0;
                 ap12++;
-                /* HELD jump (24 polls): the game's jump height is hold-driven,
-                 * and a 4-poll tap landed BEFORE the mid-air set fired - the
-                 * probe was testing a set NEXT TO a landed player, not the
-                 * user's set mid-rise (round 6). */
-                if ((ap12 >= 250 && ap12 < 274) || (ap12 >= 400 && ap12 < 424))
+                /* Pulse 1: HELD jump + air-set at spawn, then STAND until the
+                 * dropped bomb fuses out at the feet (~tick 363 = ap ~408) -
+                 * the blast TUMBLES the player, which is the oracle-gate's
+                 * hit-clip scenario (round 7: the stun showed locomotion).
+                 * Round 7 postmortem: the old moving window started at ap 370
+                 * and walked the player 7.5 su away BEFORE the blast - nobody
+                 * ever got hit and check 9 saw 0 frames. */
+                if ((ap12 >= 250 && ap12 < 274) || (ap12 >= 520 && ap12 < 544))
                     *buttons |= 0x8000;                  /* CONT_A: jump, HELD */
-                if ((ap12 >= 258 && ap12 < 262) || (ap12 >= 408 && ap12 < 412))
+                if ((ap12 >= 258 && ap12 < 262) || (ap12 >= 528 && ap12 < 532))
                     *buttons |= 0x0010;                  /* CONT_R: set mid-rise */
-                /* pulse 1 = standing air-set (did NOT reproduce the flight);
-                 * pulse 2 = MOVING air-set, the user's actual case. */
-                if (ap12 >= 370 && ap12 < 520) *y = -1.0f;
+                /* Pulse 2 (after the tumble recovers): MOVING air-set - the
+                 * player leaves the second bomb behind, no second tumble. */
+                if (ap12 >= 560 && ap12 < 700) *y = -1.0f;
             }
             if (mode && std::atoi(mode) == 11) {
                 /* THROW probe (v15 impact detonation). Hold B (grab) well past

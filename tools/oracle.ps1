@@ -164,6 +164,14 @@ if ($nBlastT) {
     }
 }
 
+# HIT/tumble clip (round 7): the air-set bomb fuses out at the setter's feet
+# (~106 frames after airsetR; the player just stands there) and the blast's
+# knockback plays the game's own hit reaction. Key on the first blast after
+# airsetR - the kicked bomb's blast came earlier.
+$nBlastA = $blast | Where-Object { $_ -gt $nAirset } | Select-Object -First 1
+$hit = $null
+if ($nBlastA) { $hit = ClipAfter $nBlastA @($idleIdx, $jumpIdx) }
+
 # kick: does the bomb SLIDE off (arena behaviour) or detonate on contact?
 $nBlastK = $blast | Where-Object { $_ -gt $nKick } | Select-Object -First 1
 $kickSlide = $false
@@ -182,6 +190,8 @@ $goldens = [ordered]@{
     kick_slide             = $kickSlide
     airset_anim_idx        = if ($airset) { $airset.idx }    else { $null }
     airset_anim_frames     = if ($airset) { $airset.frames } else { $null }
+    hit_anim_idx           = if ($hit)    { $hit.idx }       else { $null }
+    hit_anim_frames        = if ($hit)    { $hit.frames }    else { $null }
     drop_anim_idx          = if ($drop)   { $drop.idx }      else { $null }
     drop_anim_frames       = if ($drop)   { $drop.frames }   else { $null }
     throw_anim_idx         = if ($throw)  { $throw.idx }     else { $null }
