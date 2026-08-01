@@ -1,0 +1,29 @@
+{
+  "set_anim_idx": 31,
+  "set_anim_frames": 10,
+  "set_button_mask": "0x0010",
+  "kick_anim_idx": 33,
+  "kick_anim_frames": 18,
+  "kick_slide": true,
+  "airset_anim_idx": 51,
+  "airset_anim_frames": 8,
+  "drop_anim_idx": 14,
+  "drop_anim_frames": 3,
+  "throw_anim_idx": 29,
+  "throw_anim_frames": 10,
+  "bomb_rest_lift": 30.0,
+  "bomb_rest_from": "setR",
+  "throw_impact_detonates": true,
+  "throw_flight_frames": 24,
+  "throw_arc_peak": 82.0,
+  "no_oracle": [
+    "camera framing",
+    "explosion look",
+    "fun / overall feel"
+  ],
+  "provenance": {
+    "fork_commit": "e6860d3",
+    "date": "2026-08-01",
+    "level": 0
+  }
+}
