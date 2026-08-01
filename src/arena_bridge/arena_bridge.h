@@ -109,6 +109,7 @@ int   arena_anim_sweep_index(void);/* ARENA_ANIM_SWEEP=<ticks>; -1 = off */
  * the patch reads the latch for the sim's jump/bomb/set. */
 void  arena_latch_buttons(int held);
 int   arena_latched_buttons(void);
+int   arena_contain_player_state(int cur);  /* walker PUSH(42) -> last non-push state */
 /* Single-player oracle (spec 2026-08-01): ARENA_ORACLE=1 boots VANILLA
  * campaign with per-frame probes; goldens are extracted from the log.
  * Native owns all gating/throttling and the shared frame counter n; the

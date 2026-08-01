@@ -11,9 +11,11 @@
 #define ARENA_CAM_H
 
 /* Pitch measured UP FROM THE GROUND PLANE: 90 = straight down, 0 = horizontal.
- * 60 chosen so toward/away motion reads at sin(60)=0.87 of across motion -
- * near-equal - while keeping enough depth to judge bomb arcs. See the spec. */
-#define ARENA_CAM_PITCH_DEG   60.0f
+ * 35 = the user's pick from the 2026-08-01 A/B round ("closer lower angle
+ * looks better" vs the 60-degree near-top-down); the old 60 rationale
+ * (near-equal toward/away vs across reading) lost to feel. Env override:
+ * ARENA_CAM_PITCH. */
+#define ARENA_CAM_PITCH_DEG   35.0f
 
 /* MUST stay 0. The game rotates the stick in place by gView.rot.y for
  * gCameraType in {1,2,5,6,7,8} (the arena is type 6, notes 8.11). Yaw 0 makes
@@ -84,8 +86,14 @@
  * time; tools/capture-game.ps1 was silently capturing only the TOP-LEFT QUARTER
  * of the frame (a DPI bug - see the banner in that script), so the centred arena
  * appeared shoved into a corner. A RenderDoc capture of the same frame settled it
- * in one shot. Integration notes 8.17. */
-#define ARENA_CAM_DIST      2800.0f
+ * in one shot. Integration notes 8.17.
+ *
+ * 2026-08-01: 2800 -> 1600, the user's A/B pick ("really zoomed out, not a fan
+ * of the top down view"; paired with pitch 60 -> 35). The 2800 whole-floor
+ * framing analysis above still holds for INSPECTION shots - use
+ * ARENA_CAM_DIST=2800 ARENA_CAM_PITCH=60 to reproduce it. At 1600/35 the
+ * camera no longer frames the whole floor; play framing beats map framing. */
+#define ARENA_CAM_DIST      1600.0f
 /* The game's own rail camera aims at y=340 with origin_y=240, i.e. 100 above the
  * floor anchor (measured, ARENA_AUTO_BATTLE=6). Matching that keeps the horizon
  * where the room was authored for. */

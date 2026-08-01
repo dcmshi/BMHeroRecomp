@@ -120,6 +120,7 @@ extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx);   // explosion visual evidence
 extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx); // battle button ownership
+extern "C" void arena_export_contain_state(uint8_t* rdram, recomp_context* ctx);   // walker push containment
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx);   // single-player oracle
 extern "C" void arena_export_oracle_frame(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_oracle_anim(uint8_t* rdram, recomp_context* ctx);
@@ -784,10 +785,10 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                  * past the countdown, set with margin. */
                 if (ap >= 250 && ap < 340) {
                     *y = 0.0f;                                   /* stand still */
-                    if (ap >= 285 && ap < 293) *buttons |= 0x2000;   /* then set */
+                    if (ap >= 285 && ap < 293) *buttons |= 0x0010;   /* then set (R) */
                 }
                 if ((ap >= 380 && ap < 388) || (ap >= 440 && ap < 448)) {
-                    *buttons |= 0x2000;                          /* set WHILE MOVING (must NOT pose now) */
+                    *buttons |= 0x0010;                          /* set WHILE MOVING (must NOT pose now) */
                 }
             }
             if (mode && std::atoi(mode) == 12) {
@@ -802,7 +803,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 if ((ap12 >= 250 && ap12 < 254) || (ap12 >= 400 && ap12 < 404))
                     *buttons |= 0x8000;                  /* CONT_A: jump */
                 if ((ap12 >= 258 && ap12 < 262) || (ap12 >= 408 && ap12 < 412))
-                    *buttons |= 0x2000;                  /* CONT_G/Z: set mid-air */
+                    *buttons |= 0x0010;                  /* CONT_R: set mid-air */
                 /* pulse 1 = standing air-set (did NOT reproduce the flight);
                  * pulse 2 = MOVING air-set, the user's actual case. */
                 if (ap12 >= 370 && ap12 < 520) *y = -1.0f;
@@ -841,7 +842,7 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 static uint32_t kp = 0;
                 kp++;
                 if      (kp > 30  && kp < 245) *y =  0.0f;       /* wait out the countdown */
-                else if (kp >= 250 && kp < 262) *buttons |= 0x2000;   /* set (~tick 210) */
+                else if (kp >= 250 && kp < 262) *buttons |= 0x0010;   /* set (~tick 210, R) */
                 else if (kp >= 270 && kp < 312) *y = -1.0f;      /* walk clear (drops setter grace) */
                 else if (kp >= 315 && kp < 460) *y =  1.0f;      /* walk back in -> kick */
             }
@@ -905,20 +906,25 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
             }
         }
     }
-    /* BATTLE BUTTON OWNERSHIP (2026-08-01). The sim's verbs are stripped at
-     * the POLL, before any game code can copy or edge-detect them: the game
-     * latches press EDGES at input time (gActiveContPressed + per-port
+    /* BATTLE BUTTON OWNERSHIP (2026-08-01). The SET verbs (Z, R) are stripped
+     * at the POLL, before any game code can copy or edge-detect them: the
+     * game latches press EDGES at input time (gActiveContPressed + per-port
      * copies), so the old routine-entry zeroing of gActiveContButton left
-     * every edge consumer live. Mode-12 probe evidence: the walker entered
-     * its OWN set action (state 42) on our set press and STUCK there while
-     * moving - the "air-set flies off screen" report. The sim reads the
+     * every edge consumer live - the leaked R edge ran the game's OWN set
+     * action on the puppet ("air-set flies off screen"). The sim reads the
      * unstripped mask from the native latch (arena_export_latched_buttons).
-     * A (jump) intentionally passes through: the walker's own jump is the
+     *
+     * A and B intentionally PASS THROUGH. A: the walker's own jump is the
      * only visible jump (player Y is game-driven) and it terminates cleanly.
+     * B: the walker's own carry/windup/throw is the only source of the hold
+     * animation, the multi-bomb windup and its SOUND (feel round 5: stripping
+     * B silently removed all three) - the game bombs it spawns stay hidden
+     * under the per-frame pool sweep (gObjects[2..5] ACTION_NONE), so only
+     * the sim's bombs are ever visible.
      * Runs AFTER the probe-injection blocks so injected presses latch too. */
     if (ok && controller_num == 0 && arena_bridge_battle_active()) {
         arena_latch_buttons(*buttons);
-        *buttons &= (uint16_t)~(0x4000u | 0x2000u | 0x0010u);   /* B, Z, R */
+        *buttons &= (uint16_t)~(0x2000u | 0x0010u);   /* Z, R */
     }
     return ok;
 }
@@ -1176,6 +1182,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_dbg_anim);
     REGISTER_FUNC(arena_export_dbg_blast);
     REGISTER_FUNC(arena_export_latched_buttons);
+    REGISTER_FUNC(arena_export_contain_state);
     REGISTER_FUNC(arena_export_oracle_mode);
     REGISTER_FUNC(arena_export_oracle_frame);
     REGISTER_FUNC(arena_export_oracle_anim);

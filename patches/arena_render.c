@@ -115,6 +115,10 @@ DECLARE_FUNC(s32,  arena_export_oracle_mode);
  * B/Z/R from the game's copy at the POLL and latches the real mask natively -
  * see main.cpp; the mode-12 probe evidence lives with that block. */
 DECLARE_FUNC(s32,  arena_export_latched_buttons);
+/* Containment helper: returns the state the player SHOULD be in this frame -
+ * the input unchanged, or (if the walker entered PUSH against a bomb actor)
+ * the last non-push state. Native owns the memory; the patch stays stateless. */
+DECLARE_FUNC(s32,  arena_export_contain_state, s32 cur);
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -521,18 +525,24 @@ void arena_render_routine(void) {
     func_80024744();
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
-        /* CONTAINMENT (2026-08-01): the walker's solid-object reaction to our
-         * bomb actors - PUSH (42) at the feet, CARRY-SQUASH (52) overhead -
-         * enters through the player overlay's own collision scan, which five
-         * measured suppression attempts could not reach (buttons stripped,
-         * pairing idle, class behaviour skipped, damageState dead, pose off -
-         * 42 tracked the actor's position through all of them). Until the
-         * overlay's scan is RE'd (handoff item), reset the state the same
-         * frame: the walker re-derives locomotion next frame, the push-lock
-         * can't pin the kick clip, and any 42-based fall-suspension is capped
-         * at one frame. Same class of measure as gDebugInvincibileFlag. */
-        if (gPlayerObject->actionState == 42 || gPlayerObject->actionState == 52)
-            gPlayerObject->actionState = 1;
+        /* CONTAINMENT (2026-08-01): the walker's PUSH reaction (actionState
+         * 42) to a bomb actor overlapping it enters through the player
+         * overlay's own collision scan, which five measured suppression
+         * attempts could not reach (buttons stripped, pairing idle, class
+         * behaviour skipped, damageState dead, pose off - 42 tracked the
+         * actor's position through all of them). Until the overlay's scan is
+         * RE'd (handoff item), RESTORE THE PREVIOUS state (native latch) -
+         * NOT idle: an idle reset mid-jump re-entered the jump on a held A
+         * and kept rising (feel round 5, "still keeps rising"), where
+         * restoring the pre-push state lets the arc finish. 52 (the game's
+         * own bomb CARRY) is deliberately NOT contained since round 5: it IS
+         * the hold animation, restored via the B pass-through. Same class of
+         * measure as gDebugInvincibileFlag. */
+        {
+            s32 cur = (s32)gPlayerObject->actionState;
+            s32 want = arena_export_contain_state(cur);
+            if (want != cur) gPlayerObject->actionState = want;
+        }
         /* Post-update re-assert. The game's camera update runs inside
          * func_80024744 and reverts our pose (measured: wrote (60,0,0), read
          * back (20,2,0) next frame). This write is the one the draw sees. */
@@ -627,10 +637,10 @@ void arena_render_routine(void) {
         s32 latched = arena_export_latched_buttons();
         s32 jump = (latched & CONT_A) ? 1 : 0;
         s32 bomb = (latched & CONT_B) ? 1 : 0;
-        s32 set  = (latched & (CONT_G | CONT_R)) ? 1 : 0;   /* Z or R - R is
-                                       * the vanilla game's own set button (oracle,
-                                       * goldens set_button_mask=0x0010), so the
-                                       * arena honors the same muscle memory */
+        s32 set  = (latched & CONT_R) ? 1 : 0;   /* R ONLY - the vanilla game's
+                                       * own set button (goldens set_button_mask
+                                       * = 0x0010); feel round 5 dropped Z ("q
+                                       * and r both set... just have r") */
         s32 buttons = jump | (bomb << 1) | (set << 2);
         arena_export_tick_input(sx, sy, buttons);
         /* A1.4 co-drive FIX (2026-07-24): capture the world origin + sim ref ONCE,

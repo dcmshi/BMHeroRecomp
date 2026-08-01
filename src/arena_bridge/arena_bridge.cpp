@@ -178,6 +178,17 @@ static int g_latched_buttons = 0;
 extern "C" void arena_latch_buttons(int held) { g_latched_buttons = held; }
 extern "C" int  arena_latched_buttons(void)   { return g_latched_buttons; }
 
+/* Containment memory (feel rounds 4-5): the walker's PUSH reaction (42) to a
+ * bomb actor is corrected by RESTORING the last non-push state - an idle
+ * reset mid-jump re-entered the jump on a held A and kept rising. 52 (the
+ * game's own bomb carry) is NOT contained: it is the hold animation. */
+extern "C" int arena_contain_player_state(int cur) {
+    static int last_good = 1;
+    if (cur == 42) return last_good;
+    last_good = cur;
+    return cur;
+}
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
