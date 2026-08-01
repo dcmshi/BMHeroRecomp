@@ -686,7 +686,35 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
             }
             if (op == 960)  arena_oracle_phase("releaseB"); /* ... throw */
             /* 960-1260: observe flight + impact */
-            if (op == 1260) arena_oracle_phase("DONE");
+            if (op >= 1260 && op < 1264) {               /* tap R: SET at feet */
+                *buttons |= 0x0010;                       /* CONT_R */
+                if (op == 1260) arena_oracle_phase("setR");
+            }
+            /* 1264-1320: observe - set anim + bomb at rest. Standing: the game
+             * walker stomps the set pose the moment the player moves. */
+            /* Stick signs are the amendment's INVERTED: -1.0f drives +Z, which
+             * is where the set bomb sits, so the plan's walkoff kicked it 20
+             * frames before kickrun. Windows also pulled ~60 polls earlier -
+             * the set bomb's fuse measured 106 frames (set n=632, blast n=738),
+             * expiring 18 frames into the plan's kickrun window. */
+            if (op >= 1320 && op < 1360) {               /* step clear of the set bomb */
+                *y = 1.0f;
+                if (op == 1320) arena_oracle_phase("walkoff");
+            }
+            if (op >= 1360 && op < 1420) {               /* run back in -> KICK */
+                *y = -1.0f;
+                if (op == 1360) arena_oracle_phase("kickrun");
+            }
+            /* 1560-1740: observe - kick anim + bomb slide */
+            if (op >= 1740 && op < 1746) {               /* jump ... */
+                *buttons |= 0x8000;                       /* CONT_A */
+                if (op == 1740) arena_oracle_phase("jumpA");
+            }
+            if (op >= 1752 && op < 1756) {               /* ... R mid-air: AIR SET */
+                *buttons |= 0x0010;
+                if (op == 1752) arena_oracle_phase("airsetR");
+            }
+            if (op == 2040) arena_oracle_phase("DONE");
         }
         return ok;
     }
