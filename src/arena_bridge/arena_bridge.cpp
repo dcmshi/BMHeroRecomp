@@ -567,7 +567,11 @@ extern "C" int arena_set_new(int i) {
 extern "C" void arena_dbg_anim(int idx, int frame, int state) {
     static int last  = -1;
     static int burst = 0;
-    if (idx != last) { last = idx; burst = 8; }
+    /* 20, was 8: oracle-gate's full-clip checks COUNT these lines against the
+     * golden clip lengths (kick = 18), and an 8-line burst capped the count at
+     * 8 regardless of what actually played - the gate's first red was the
+     * logger's bound, not the clip (2026-08-01; measure the instrument first). */
+    if (idx != last) { last = idx; burst = 20; }
 
     /* Two logs, deliberately.
      *
