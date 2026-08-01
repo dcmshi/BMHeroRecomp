@@ -107,6 +107,14 @@ extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (un
 DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
 DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame, s32 state);  /* anim idx+frame+actionState */
 
+/* ---- Single-player oracle (ARENA_ORACLE=1; spec 2026-08-01) ------------ */
+/* Native owns all gating/throttling and the shared line counter; the patch
+ * calls these unconditionally inside the oracle branch and stays stateless. */
+DECLARE_FUNC(s32,  arena_export_oracle_mode);
+DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
+DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
+DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
+
 /* ---- A1.5 fixed arena camera ------------------------------------------- */
 #include "arena_cam.h"                      /* pose constants; no game types    */
 /* Native side owns the probe-mode gate AND the throttle, so this is called
@@ -289,6 +297,41 @@ extern void (*gDebugRoutine2)(void);
  * placeholders; real bomber models are a follow-up (skeletal, see above). */
 void arena_render_routine(void) {
     u16 held_buttons;
+    /* Single-player ORACLE (ARENA_ORACLE=1): per-frame probes of the VANILLA
+     * campaign, the reference the arena is checked against (goldens). READ
+     * ONLY - the game is not modified. Battle never sets the knob; with it
+     * unset this whole block costs one cached-bool export call per frame.
+     * oracle_frame is called FIRST: it ticks the shared line counter n. */
+    if (!arena_bridge_is_battle() && arena_export_oracle_mode()) {
+        s32 k;
+        s32 pvalid = (gPlayerObject != NULL) ? 1 : 0;
+        f32 fy = -30000.0f;   /* the game's own "no floor" sentinel (69AA0.c:401) */
+        f32 py = 0.0f;
+        if (pvalid) {
+            py = gPlayerObject->Pos.y;
+            /* The game's ground query (69AA0.c:205) - pure position in,
+             * globals out; every object's own ground handling calls it the
+             * same way, so an extra refresh is safe (raster precedent). */
+            func_80078168(gPlayerObject->Pos.x, gPlayerObject->Pos.y, gPlayerObject->Pos.z);
+            { s32 sel = GQ_SEL; fy = GQ_H[sel]; }
+        }
+        arena_export_oracle_frame((s32)gCurrentLevel, pvalid, fbits(fy), fbits(py));
+        if (pvalid) {
+            /* live player anim: the same reads the [animw] channel uses */
+            arena_export_oracle_anim(func_8001B880(0, 0),
+                                     fbits(func_8001B62C(0, 0)),
+                                     (s32)gPlayerObject->actionState);
+        }
+        /* game bomb pool [2..5] and explosion pool [6..13]: active only */
+        for (k = 2; k < 14; k++) {
+            if (gObjects[k].actionState != ACTION_NONE)
+                arena_export_oracle_obj((k << 16) | ((s32)gObjects[k].actionState & 0xFFFF),
+                                        fbits(gObjects[k].Pos.x),
+                                        fbits(gObjects[k].Pos.y),
+                                        fbits(gObjects[k].Pos.z));
+        }
+    }
+
     /* A1.2g - SUPPRESS THE ROOM'S OWN DAMAGE. In battle the SIM owns every hit
      * and every hit point; the game object is a puppet, so any damage the room
      * lands on it is by definition wrong. It is also dangerous: the bypassed
