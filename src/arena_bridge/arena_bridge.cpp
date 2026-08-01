@@ -100,6 +100,20 @@ static int arena_pose_frames(void) {
     return n;
 }
 
+/* KICK window length, separate from the set window: the oracle measured the
+ * kick clip (33) at 18 frames vs the set clip (31) at 10 — one shared length
+ * cut the kick off 10/18 through and the walker stomped the rest (feel round
+ * 4: "the kick animation doesn't look correct"). Default = the golden
+ * kick_anim_frames; ARENA_KICK_POSE_FRAMES overrides for experiments. */
+static int arena_kick_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_KICK_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 18;
+    }();
+    return n;
+}
+
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
     void ensure_init() {
@@ -155,6 +169,14 @@ extern "C" int arena_draw_gate(void) {
  * instantly on RE-entry and the race fired again (probe crash 2026-07-22,
  * player ran into the boss room's level-exit trigger). */
 extern "C" void arena_draw_gate_reset(void) { g_draw_warmup = 0; }
+
+/* BATTLE BUTTON OWNERSHIP (2026-08-01): the input callback latches the real
+ * button mask here, then strips the sim's verbs (B/Z/R) from what the game
+ * receives - at the POLL, before any game code can copy or edge-detect them.
+ * The render patch builds the sim's jump/bomb/set from this latch. */
+static int g_latched_buttons = 0;
+extern "C" void arena_latch_buttons(int held) { g_latched_buttons = held; }
+extern "C" int  arena_latched_buttons(void)   { return g_latched_buttons; }
 
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
@@ -226,7 +248,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
             int kicker = (int)g_state.bombs[b].bounced - 1;
             if (kicker == 0) {
                 g_pose_anim   = arena_kick_anim_index();
-                g_pose_frames = arena_pose_frames();
+                g_pose_frames = arena_kick_pose_frames();
                 if (g_log) {
                     std::fprintf(g_log, "[kick] pose idx=%d bomb=%d\n", g_pose_anim, b);
                     std::fflush(g_log);
@@ -1169,11 +1191,34 @@ extern "C" void arena_floor_raster_report(int sel, int hbits, int type) {
 extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     static const char* mode  = std::getenv("ARENA_AUTO_BATTLE");
     /* mode 8 (direction probe) reuses this logger for the facing check. */
+    static const bool  airset = (mode != nullptr &&
+                                 (std::atoi(mode) == 12 || std::atoi(mode) == 11));
     static const bool  armed = (mode != nullptr &&
                                 (std::atoi(mode) == 6 || std::atoi(mode) == 8 ||
-                                 std::atoi(mode) == 9));
+                                 std::atoi(mode) == 9)) || airset;
     static const bool  turnprobe = (mode != nullptr && std::atoi(mode) == 9);
     if (!armed) return;
+
+    /* Air-set probe (mode 12): who owns player Y when a mid-air set fires?
+     * gameY = the walker's own Pos.y (tag 7, stashed); simY = our sim player 0.
+     * Every other frame, BEFORE the throttle - the question is a runaway ramp
+     * vs a normal arc, and a 1-in-30 sample can miss the whole jump. 30000 is
+     * the game's "no ground here" sentinel (the floor guard's park value). */
+    if (airset) {
+        static float as_gameY = 0;
+        if (tag == 7) std::memcpy(&as_gameY, &ybits, sizeof as_gameY);
+        if (tag == 8) {
+            static int an = 0;
+            if ((++an % 2) == 0 && g_log) {
+                std::fprintf(g_log, "[airset] f%04d gameY=%.1f simY=%.3f state=%d pair=%d pressed=0x%04x\n",
+                             an, (double)as_gameY,
+                             (double)qf(g_state.players[0].pos.y), xbits,
+                             ybits, (unsigned)zbits & 0xFFFFu);
+                std::fflush(g_log);
+            }
+        }
+        return;   /* mode 12 wants only this channel; skip the mode-6 loggers */
+    }
     if (tag < 0 || tag > 11) return;
 
     /* A1.2g exit-trigger hunt: gCurrentLevel + the next-level request vars.

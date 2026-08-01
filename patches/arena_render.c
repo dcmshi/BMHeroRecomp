@@ -111,6 +111,10 @@ DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame, s32 state);  /* an
 /* Native owns all gating/throttling and the shared line counter; the patch
  * calls these unconditionally inside the oracle branch and stays stateless. */
 DECLARE_FUNC(s32,  arena_export_oracle_mode);
+/* Battle button ownership: the sim's button source. The input callback strips
+ * B/Z/R from the game's copy at the POLL and latches the real mask natively -
+ * see main.cpp; the mode-12 probe evidence lives with that block. */
+DECLARE_FUNC(s32,  arena_export_latched_buttons);
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -204,6 +208,44 @@ DECLARE_FUNC(f32,  arena_export_cam_at_z);
  * probes, so the two never coexist in practice. */
 /* func_8001BE6C is declared in functions.h with arg3 as s32 (the game address
  * of the anim source); cast exactly as the original call site does. */
+/* ---- BATTLE: actors are puppets - their borrowed class must not ACT ------ */
+/* The world-object dispatcher (boot/26CE0.c): every active gObjects[14..77]
+ * runs its class behaviour() per frame. Our actors BORROW the door class for
+ * its mesh registry, and the door's behaviour registers SOLID collision - the
+ * walker's own response to a solid object overlapping it is PUSH (actionState
+ * 42: entered mid-air on an air-set it suspends the fall, the feel-round-4
+ * "setting midair keeps flying off screen"; re-pinned every frame while
+ * running into a set bomb, where it fought the kick clip) and CARRY-SQUASH
+ * (52, a held bomb at head height). Measured by the mode-11/12 probes with
+ * buttons stripped at the poll AND the 21E10 pairing verified idle (pair=-1,
+ * pressed=0x0000): the states tracked the ACTOR's position and nothing else.
+ * So in battle, actor slots SKIP their class behaviour - the sim owns their
+ * behavior - while the anim/draw bookkeeping below still runs so they render.
+ *
+ * Two rejected fixes, for the record: 21E10's eligibility predicates are NOT
+ * pairing-only (the recompiled movement code calls func_80021210 ten more
+ * times as a general "free to act" check; battle-0 there stalled the jump at
+ * state 5 with the ascent never terminating), and an item-class objID swap
+ * stalled the jump the same way (item classes are not inert either). */
+RECOMP_PATCH void func_8002B154(void) {
+    s32 i;
+    for (i = 14; i < 78; i++) {
+        if (gObjects[i].actionState != 0) {
+            gCurrentParsedObject = i;
+            if (!(arena_bridge_is_battle() && arena_export_is_actor_slot(i)))
+                gObjInfo[gObjects[i].objID].behaviour();
+            if (gObjects[i].actionState != 0) {
+                if (gObjects[i].damageState >= 2) {
+                    gObjects[i].damageState -= 1;
+                }
+                func_8001CEF4(i);
+                func_8001CD20(i);
+                func_8001AD6C(i);
+            }
+        }
+    }
+}
+
 RECOMP_PATCH void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u32* animTable) {
     if (objId == 0 && part == 0) {
         s32 pose = arena_export_pose_anim();
@@ -465,12 +507,32 @@ void arena_render_routine(void) {
      * The STICK is deliberately left alone: func_80024744 turns it into
      * gPlayerObject->moveAngle, which we copy for facing. Only the buttons go.
      * Captured first, so the sim still sees the real presses below. */
+    /* 2026-08-01: B/Z/R are now stripped at the POLL (main.cpp input callback)
+     * - the game latches press EDGES at input time, so this routine-entry
+     * zeroing alone leaked every edge to the walker (mode-12 probe: the
+     * game's OWN set action, state 42, fired on our set press and stuck while
+     * moving = the "air-set flies off screen" report). The zeroing stays as a
+     * second layer for the HELD mask; the sim reads the pre-strip mask from
+     * the native latch below. */
     held_buttons = gActiveContButton;
     if (arena_bridge_is_battle()) gActiveContButton = 0;
+    (void)held_buttons;
 
     func_80024744();
 
     if (arena_bridge_is_battle() && gPlayerObject != NULL) {
+        /* CONTAINMENT (2026-08-01): the walker's solid-object reaction to our
+         * bomb actors - PUSH (42) at the feet, CARRY-SQUASH (52) overhead -
+         * enters through the player overlay's own collision scan, which five
+         * measured suppression attempts could not reach (buttons stripped,
+         * pairing idle, class behaviour skipped, damageState dead, pose off -
+         * 42 tracked the actor's position through all of them). Until the
+         * overlay's scan is RE'd (handoff item), reset the state the same
+         * frame: the walker re-derives locomotion next frame, the push-lock
+         * can't pin the kick clip, and any 42-based fall-suspension is capped
+         * at one frame. Same class of measure as gDebugInvincibileFlag. */
+        if (gPlayerObject->actionState == 42 || gPlayerObject->actionState == 52)
+            gPlayerObject->actionState = 1;
         /* Post-update re-assert. The game's camera update runs inside
          * func_80024744 and reverts our pose (measured: wrote (60,0,0), read
          * back (20,2,0) next frame). This write is the one the draw sees. */
@@ -491,9 +553,13 @@ void arena_render_routine(void) {
          * rather than assumed: a non-zero code with no damage and no stun proves
          * the tile is being DETECTED and the damage SUPPRESSED, where "nothing
          * bad happened" alone would prove nothing. */
+        /* y/zbits double as probe channels for the mode-12 air-set hunt:
+         * y = the interaction pairing (must stay -1 with the 21E10 predicates
+         * patched off in battle), z = the live pressed-edge mask (must stay 0
+         * with the poll strip). Mode 6 does not read tag 8's y/z. */
         arena_export_dbg_cam(8, (s32)gPlayerObject->actionState,
-                                (s32)gPlayerObject->unkA6,
-                                (s32)gDebugHazardCode);
+                                (s32)gPlayerObject->interactingObjIdx,
+                                (s32)gActiveContPressed);
 
         /* A1.5 FAR CLIP. Tag 9 logs the LEVEL's authored ZFAR, then we raise it.
          * Measured: MAP_NITROS_1 already authors 8000 and the floor's far corner
@@ -555,11 +621,16 @@ void arena_render_routine(void) {
         if (sx < -31) sx = -31;
         if (sy >  31) sy =  31;
         if (sy < -31) sy = -31;
-        /* held_buttons, not gActiveContButton: the live copy was zeroed above so
-         * the game's own player could not act on it. */
-        s32 jump = (held_buttons & CONT_A) ? 1 : 0;
-        s32 bomb = (held_buttons & CONT_B) ? 1 : 0;
-        s32 set  = (held_buttons & CONT_G) ? 1 : 0;   /* Z trigger / Q key */
+        /* The native LATCH, not gActiveContButton: the poll-level strip means
+         * the game's copies never contain B/Z/R in battle - the latch holds
+         * the real pre-strip mask (main.cpp, 2026-08-01). */
+        s32 latched = arena_export_latched_buttons();
+        s32 jump = (latched & CONT_A) ? 1 : 0;
+        s32 bomb = (latched & CONT_B) ? 1 : 0;
+        s32 set  = (latched & (CONT_G | CONT_R)) ? 1 : 0;   /* Z or R - R is
+                                       * the vanilla game's own set button (oracle,
+                                       * goldens set_button_mask=0x0010), so the
+                                       * arena honors the same muscle memory */
         s32 buttons = jump | (bomb << 1) | (set << 2);
         arena_export_tick_input(sx, sy, buttons);
         /* A1.4 co-drive FIX (2026-07-24): capture the world origin + sim ref ONCE,
@@ -819,6 +890,14 @@ void arena_render_routine(void) {
                         gObjects[slot].Scale.y     = 1.0f;
                         gObjects[slot].Scale.z     = 1.0f;
                         gObjects[slot].actionState = ACTION_IDLE;   /* visible */
+                        /* DEAD to the walker's own solid-object scan (2026-08-01):
+                         * with buttons stripped, pairing idle (pair=-1) and the
+                         * class behaviour skipped, the player STILL entered PUSH
+                         * (42) tracking this actor's position - the overlay's
+                         * collision scan filters on damageState like the 21E10
+                         * predicates do, so a "dead" object is intangible to it.
+                         * Draw keys on actionState, not damageState. */
+                        gObjects[slot].damageState = OBJ_DEATH;
                     } else {
                         gObjects[slot].actionState = ACTION_NONE;   /* hidden */
                     }

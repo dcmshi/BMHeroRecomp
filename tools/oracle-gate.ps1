@@ -49,6 +49,10 @@ $m10 = RunSoak @("-N","1","-Mode","10","-Rising","\[anim\] idx=$($g.kick_anim_id
 $kickLines = @($m10 | Select-String "\[anim\] idx=$($g.kick_anim_idx) frame=(\d+)")
 Check "kick-pose idx==golden" ((Advanced $kickLines)) `
       "golden idx=$($g.kick_anim_idx), saw $($kickLines.Count) frames"
+# feel round 4: the shared 10-frame window cut the 18-frame kick clip mid-play
+# and the walker stomped the rest - assert the FULL golden length now.
+$kickLenOK = [math]::Abs($kickLines.Count - $g.kick_anim_frames) -le 2
+Check "kick-pose full clip" $kickLenOK "golden $($g.kick_anim_frames) frames, saw $($kickLines.Count)"
 
 # --- check 5: throw impact-detonation inside the golden flight envelope -------
 $m11 = RunSoak @("-N","1","-Mode","11","-Expect","\[blastvis\]")
@@ -60,6 +64,18 @@ if ($tThrow -and $tBlast) {
     $ok  = $g.throw_impact_detonates -and ($dt -gt 0) -and ($dt -le $cap) -and ($dt -lt 100)
     Check "throw impact-detonates" $ok "golden flight $($g.throw_flight_frames) (cap $cap), arena dt=$dt"
 } else { Check "throw impact-detonates" $false "missing [throw]/[blastvis] in mode-11 log" }
+
+# --- check 7: air-set leaves the walker clean (feel round 4 regression) -------
+# The walker's solid-object reaction to a bomb actor (PUSH 42 / CARRY-SQUASH 52)
+# suspended the fall when entered mid-air ("setting midair keeps flying off
+# screen") and pinned the kick clip. Containment resets it same-frame; this
+# gate proves the reaction never SURVIVES a frame - it must find the [airset]
+# channel alive and zero 42/52 samples across a jump+air-set+moving-set script.
+$m12 = RunSoak @("-N","1","-Mode","12","-Expect","\[airset\]")
+$asAll = @($m12 | Select-String '\[airset\] ')
+$asBad = @($m12 | Select-String '\[airset\] .* state=(42|52) ')
+Check "air-set: no push/carry lock" (($asAll.Count -gt 0) -and ($asBad.Count -eq 0)) `
+      "airset samples=$($asAll.Count), 42/52 samples=$($asBad.Count)"
 
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

@@ -247,6 +247,11 @@ extern "C" void arena_export_cam_at_x(uint8_t* rdram, recomp_context* ctx) { (vo
 extern "C" void arena_export_cam_at_y(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_y()); }
 extern "C" void arena_export_cam_at_z(uint8_t* rdram, recomp_context* ctx) { (void)rdram; _return(ctx, arena_cam_at_z()); }
 
+/* Battle button ownership: the sim's button source (poll-level latch). */
+extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_latched_buttons());
+}
+
 /* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_oracle_mode());

@@ -104,6 +104,11 @@ float arena_cam_yaw_eff_cos(void); /* cos(yaw + 90deg) */
 float arena_cam_pitch_sin(void);
 float arena_cam_pitch_cos(void);
 int   arena_anim_sweep_index(void);/* ARENA_ANIM_SWEEP=<ticks>; -1 = off */
+/* Battle button ownership (2026-08-01): the input callback latches the real
+ * mask and strips the sim's verbs (B/Z/R) from the game's copy at the POLL;
+ * the patch reads the latch for the sim's jump/bomb/set. */
+void  arena_latch_buttons(int held);
+int   arena_latched_buttons(void);
 /* Single-player oracle (spec 2026-08-01): ARENA_ORACLE=1 boots VANILLA
  * campaign with per-frame probes; goldens are extracted from the log.
  * Native owns all gating/throttling and the shared frame counter n; the

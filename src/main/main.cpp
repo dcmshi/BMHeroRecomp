@@ -119,6 +119,7 @@ extern "C" void arena_export_blast_wx(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wy(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx);   // explosion visual evidence
+extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx); // battle button ownership
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx);   // single-player oracle
 extern "C" void arena_export_oracle_frame(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_oracle_anim(uint8_t* rdram, recomp_context* ctx);
@@ -789,6 +790,23 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                     *buttons |= 0x2000;                          /* set WHILE MOVING (must NOT pose now) */
                 }
             }
+            if (mode && std::atoi(mode) == 12) {
+                /* AIR-SET probe (feel round 4: "setting midair causes bomberman
+                 * to keep flying off screen"). Jump, set on the way up, watch
+                 * the [airset] gameY/simY channel (arena_dbg_cam, mode 12) for
+                 * a runaway ramp vs a normal arc. Two pulses for two samples;
+                 * both land well past the 180-tick countdown (poll clock runs
+                 * ~45 ahead of the sim tick, §8.22). */
+                static uint32_t ap12 = 0;
+                ap12++;
+                if ((ap12 >= 250 && ap12 < 254) || (ap12 >= 400 && ap12 < 404))
+                    *buttons |= 0x8000;                  /* CONT_A: jump */
+                if ((ap12 >= 258 && ap12 < 262) || (ap12 >= 408 && ap12 < 412))
+                    *buttons |= 0x2000;                  /* CONT_G/Z: set mid-air */
+                /* pulse 1 = standing air-set (did NOT reproduce the flight);
+                 * pulse 2 = MOVING air-set, the user's actual case. */
+                if (ap12 >= 370 && ap12 < 520) *y = -1.0f;
+            }
             if (mode && std::atoi(mode) == 11) {
                 /* THROW probe (v15 impact detonation). Hold B (grab) well past
                  * the sim's 180-tick countdown, release -> the bomb flies and
@@ -886,6 +904,21 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 else               *x = -1.0f;
             }
         }
+    }
+    /* BATTLE BUTTON OWNERSHIP (2026-08-01). The sim's verbs are stripped at
+     * the POLL, before any game code can copy or edge-detect them: the game
+     * latches press EDGES at input time (gActiveContPressed + per-port
+     * copies), so the old routine-entry zeroing of gActiveContButton left
+     * every edge consumer live. Mode-12 probe evidence: the walker entered
+     * its OWN set action (state 42) on our set press and STUCK there while
+     * moving - the "air-set flies off screen" report. The sim reads the
+     * unstripped mask from the native latch (arena_export_latched_buttons).
+     * A (jump) intentionally passes through: the walker's own jump is the
+     * only visible jump (player Y is game-driven) and it terminates cleanly.
+     * Runs AFTER the probe-injection blocks so injected presses latch too. */
+    if (ok && controller_num == 0 && arena_bridge_battle_active()) {
+        arena_latch_buttons(*buttons);
+        *buttons &= (uint16_t)~(0x4000u | 0x2000u | 0x0010u);   /* B, Z, R */
     }
     return ok;
 }
@@ -1142,6 +1175,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
     REGISTER_FUNC(arena_export_dbg_blast);
+    REGISTER_FUNC(arena_export_latched_buttons);
     REGISTER_FUNC(arena_export_oracle_mode);
     REGISTER_FUNC(arena_export_oracle_frame);
     REGISTER_FUNC(arena_export_oracle_anim);
