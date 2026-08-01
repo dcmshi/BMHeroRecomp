@@ -189,6 +189,19 @@ extern "C" int arena_contain_player_state(int cur) {
     return cur;
 }
 
+/* Round 6: restoring actionState alone left the ascent dead - the push ENTRY
+ * also clobbers the walker's vertical velocity, and a FALLING air-set bomb
+ * overlaps the setter for the whole drop, re-clobbering every frame ("the
+ * midair set shouldn't cause bomberman to go down immediately"). The patch
+ * reports Vel.y every frame; when a correction fires it gets last frame's
+ * value back. Bits, not floats - the export ABI. */
+extern "C" int arena_contain_player_vely(int velybits, int correcting) {
+    static int last_good = 0;
+    if (correcting) return last_good;
+    last_good = velybits;
+    return velybits;
+}
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
@@ -317,7 +330,13 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
 /* getters return the last tick's scaled displacement (dx/dz) and abs yaw;
  * i is ignored for A1.2a (only player 0 is driven). */
 extern "C" float arena_get_player_x(int i)       { (void)i; return g_render_dx; }
-extern "C" float arena_get_player_y(int i)       { (void)i; return 0.0f; }  /* Y left to game */
+extern "C" float arena_get_player_y(int i) {
+    /* Round 6: the real sim y (was an A1.2a stub returning 0, "Y left to
+     * game" - which silently defeated the airborne Y-drive). Sim units;
+     * > 0 = airborne. */
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return 0.0f;
+    return qf(g_state.players[i].pos.y);
+}
 extern "C" float arena_get_player_z(int i)       { (void)i; return g_render_dz; }
 extern "C" float arena_get_player_yaw_deg(int i) { (void)i; return g_render_yaw; }
 
@@ -439,7 +458,15 @@ extern "C" float arena_puppet_wx(int i) {
     if (i < 0 || i >= ARENA_MAX_PLAYERS) return g_origin_x;
     return g_origin_x + (qf(g_state.players[i].pos.x) - g_ref_sx) * g_scale;
 }
-extern "C" float arena_puppet_wy(int i) { (void)i; return g_origin_y; }
+extern "C" float arena_puppet_wy(int i) {
+    /* Round 6: track the sim's Y (was: flat origin). Sim ground y=0 maps to
+     * the frozen world floor; same Hero-units-per-sim-unit scale as X/Z. The
+     * patch drives player 0's Pos.y from this WHILE the sim is airborne - the
+     * walker's own jump is a fixed mini-hop that landed ~20 ticks before the
+     * sim's arc, which is what made a mid-air set look like it cut the jump. */
+    if (i < 0 || i >= ARENA_MAX_PLAYERS) return g_origin_y;
+    return g_origin_y + qf(g_state.players[i].pos.y) * g_scale;
+}
 extern "C" float arena_puppet_wz(int i) {
     if (i < 0 || i >= ARENA_MAX_PLAYERS) return g_origin_z;
     return g_origin_z + (qf(g_state.players[i].pos.z) - g_ref_sz) * g_scale_z;
@@ -470,6 +497,18 @@ extern "C" float arena_bomb_wx(int i) {
 }
 extern "C" float arena_bomb_wy(int i) {
     if (i < 0 || i >= ARENA_MAX_BOMBS) return g_origin_y + BOMB_MESH_REST_LIFT;
+    /* HELD: render at the owner's HANDS. The sim tracks a held bomb at
+     * head height (owner y + PLAYER_HEIGHT, 120 world units) and the rest
+     * lift added another 30, which drew it ON Bomberman's head (feel round
+     * 6). The vanilla game's held bomb sits 50 units above the player's
+     * feet - measured from the oracle's holdB window ([oracle-bomb] y=50.0
+     * with playerY=0.00) - so hands = owner feet + 50, render-side only
+     * (the sim's tracking height is hash-covered and gameplay-neutral). */
+    if (g_state.bombs[i].state == BSTATE_HELD) {
+        int o = g_state.bombs[i].owner;
+        float feet = qf(g_state.players[o].pos.y);
+        return g_origin_y + 50.0f + (feet - g_ref_sy) * g_scale;
+    }
     float w = g_origin_y + BOMB_MESH_REST_LIFT
               + (qf(g_state.bombs[i].pos.y) - g_ref_sy) * g_scale;   /* arc height */
     /* A1.2e: floor-clamp. ref_sy is sampled at capture; any positive ref puts
@@ -1222,6 +1261,26 @@ extern "C" void arena_dbg_cam(int tag, int xbits, int ybits, int zbits) {
     if (airset) {
         static float as_gameY = 0;
         if (tag == 7) std::memcpy(&as_gameY, &ybits, sizeof as_gameY);
+        /* [contain] evidence (round 6): one line per containment correction -
+         * the raw state the walker entered, what was restored, and the
+         * restored Vel.y (bits in z). */
+        if (tag == 12 && g_log) {
+            union { int i; float f; } vy; vy.i = zbits;
+            std::fprintf(g_log, "[contain] cur=%d want=%d vely=%.3f\n",
+                         xbits, ybits, (double)vy.f);
+            std::fflush(g_log);
+        }
+        /* [ydrive]: player 0's Pos.y as DRIVEN this frame (post-write) vs the
+         * sim's y - the entry-sampled [airset] gameY can never see the drive. */
+        if (tag == 13 && g_log) {
+            static int yn = 0;
+            if ((++yn % 2) == 0) {
+                union { int i; float f; } gy, sy; gy.i = xbits; sy.i = ybits;
+                std::fprintf(g_log, "[ydrive] f%04d drivenY=%.1f simY=%.3f\n",
+                             yn, (double)gy.f, (double)sy.f);
+                std::fflush(g_log);
+            }
+        }
         if (tag == 8) {
             static int an = 0;
             if ((++an % 2) == 0 && g_log) {

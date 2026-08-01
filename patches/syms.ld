@@ -133,3 +133,4 @@ arena_export_oracle_anim  = 0x8F000258;
 arena_export_oracle_obj   = 0x8F00025C;
 arena_export_latched_buttons = 0x8F000260;
 arena_export_contain_state = 0x8F000264;
+arena_export_contain_vely = 0x8F000268;

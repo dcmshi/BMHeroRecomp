@@ -256,6 +256,10 @@ extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx
 extern "C" void arena_export_contain_state(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_contain_player_state(_arg<0, int>(rdram, ctx)));
 }
+extern "C" void arena_export_contain_vely(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_contain_player_vely(_arg<0, int>(rdram, ctx),
+                                           _arg<1, int>(rdram, ctx)));
+}
 
 /* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {

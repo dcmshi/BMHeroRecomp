@@ -77,5 +77,14 @@ $asBad = @($m12 | Select-String '\[airset\] .* state=(42|52) ')
 Check "air-set: no push/carry lock" (($asAll.Count -gt 0) -and ($asBad.Count -eq 0)) `
       "airset samples=$($asAll.Count), 42/52 samples=$($asBad.Count)"
 
+# --- check 8: the VISIBLE jump flies the sim's arc (round 6 Y-drive) ----------
+# The walker's own jump is a fixed mini-hop (~87 units); player 0's Pos.y is
+# driven from the sim while airborne. [ydrive] logs the driven value - its
+# peak must reach the sim's apex region (sim jump ~2.1 su = ~494 world; the
+# floor is 240), or the drive has regressed to the mini-hop.
+$yd = @($m12 | Select-String '\[ydrive\] .* drivenY=([\d.]+)' | ForEach-Object { [double]$_.Matches[0].Groups[1].Value })
+$peak = if ($yd.Count) { ($yd | Measure-Object -Maximum).Maximum } else { 0 }
+Check "jump: visible Y flies the sim arc" ($peak -ge 420) "peak drivenY=$peak (floor 240, sim apex ~494)"
+
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

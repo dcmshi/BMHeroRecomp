@@ -121,6 +121,7 @@ extern "C" void arena_export_blast_wz(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx);   // explosion visual evidence
 extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx); // battle button ownership
 extern "C" void arena_export_contain_state(uint8_t* rdram, recomp_context* ctx);   // walker push containment
+extern "C" void arena_export_contain_vely(uint8_t* rdram, recomp_context* ctx);    //  + vertical velocity restore
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx);   // single-player oracle
 extern "C" void arena_export_oracle_frame(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_oracle_anim(uint8_t* rdram, recomp_context* ctx);
@@ -800,10 +801,14 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                  * ~45 ahead of the sim tick, §8.22). */
                 static uint32_t ap12 = 0;
                 ap12++;
-                if ((ap12 >= 250 && ap12 < 254) || (ap12 >= 400 && ap12 < 404))
-                    *buttons |= 0x8000;                  /* CONT_A: jump */
+                /* HELD jump (24 polls): the game's jump height is hold-driven,
+                 * and a 4-poll tap landed BEFORE the mid-air set fired - the
+                 * probe was testing a set NEXT TO a landed player, not the
+                 * user's set mid-rise (round 6). */
+                if ((ap12 >= 250 && ap12 < 274) || (ap12 >= 400 && ap12 < 424))
+                    *buttons |= 0x8000;                  /* CONT_A: jump, HELD */
                 if ((ap12 >= 258 && ap12 < 262) || (ap12 >= 408 && ap12 < 412))
-                    *buttons |= 0x0010;                  /* CONT_R: set mid-air */
+                    *buttons |= 0x0010;                  /* CONT_R: set mid-rise */
                 /* pulse 1 = standing air-set (did NOT reproduce the flight);
                  * pulse 2 = MOVING air-set, the user's actual case. */
                 if (ap12 >= 370 && ap12 < 520) *y = -1.0f;
@@ -1183,6 +1188,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_dbg_blast);
     REGISTER_FUNC(arena_export_latched_buttons);
     REGISTER_FUNC(arena_export_contain_state);
+    REGISTER_FUNC(arena_export_contain_vely);
     REGISTER_FUNC(arena_export_oracle_mode);
     REGISTER_FUNC(arena_export_oracle_frame);
     REGISTER_FUNC(arena_export_oracle_anim);

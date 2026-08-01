@@ -119,6 +119,7 @@ DECLARE_FUNC(s32,  arena_export_latched_buttons);
  * the input unchanged, or (if the walker entered PUSH against a bomb actor)
  * the last non-push state. Native owns the memory; the patch stays stateless. */
 DECLARE_FUNC(s32,  arena_export_contain_state, s32 cur);
+DECLARE_FUNC(s32,  arena_export_contain_vely, s32 velybits, s32 correcting);
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -511,15 +512,19 @@ void arena_render_routine(void) {
      * The STICK is deliberately left alone: func_80024744 turns it into
      * gPlayerObject->moveAngle, which we copy for facing. Only the buttons go.
      * Captured first, so the sim still sees the real presses below. */
-    /* 2026-08-01: B/Z/R are now stripped at the POLL (main.cpp input callback)
-     * - the game latches press EDGES at input time, so this routine-entry
-     * zeroing alone leaked every edge to the walker (mode-12 probe: the
-     * game's OWN set action, state 42, fired on our set press and stuck while
-     * moving = the "air-set flies off screen" report). The zeroing stays as a
-     * second layer for the HELD mask; the sim reads the pre-strip mask from
-     * the native latch below. */
+    /* Battle button policy at the ROUTINE (the poll strip in main.cpp is the
+     * first layer; set verbs Z/R never arrive at all):
+     *
+     * A and B stay in the HELD mask (round 6). The walker's variable JUMP
+     * sustains on the held A - with the mask zeroed, only the press edge
+     * arrived and every visible jump was a MINIMUM HOP peaking ~87 units in
+     * 4 frames while the sim's arc ran another ~20 ticks (measured, mode-12:
+     * gameY 240->327->240 with A held throughout). That desync is what made
+     * a mid-air set look like it killed the jump ("he should continue his
+     * same jump momentum" - the visible player had already landed). B held
+     * likewise sustains the carry/windup. Everything else is zeroed. */
     held_buttons = gActiveContButton;
-    if (arena_bridge_is_battle()) gActiveContButton = 0;
+    if (arena_bridge_is_battle()) gActiveContButton &= (CONT_A | CONT_B);
     (void)held_buttons;
 
     func_80024744();
@@ -539,9 +544,21 @@ void arena_render_routine(void) {
          * the hold animation, restored via the B pass-through. Same class of
          * measure as gDebugInvincibileFlag. */
         {
-            s32 cur = (s32)gPlayerObject->actionState;
+            s32 cur  = (s32)gPlayerObject->actionState;
             s32 want = arena_export_contain_state(cur);
-            if (want != cur) gPlayerObject->actionState = want;
+            /* Round 6: the push ENTRY also clobbers the walker's vertical
+             * velocity, and a FALLING air-set bomb overlaps the setter for
+             * the whole drop - restoring the state alone left the jump dead
+             * ("goes down immediately"). Restore last frame's Vel.y with it. */
+            s32 nvb  = arena_export_contain_vely(fbits(gPlayerObject->Vel.y),
+                                                 (want != cur) ? 1 : 0);
+            if (want != cur) {
+                union { s32 i; f32 f; } u;
+                u.i = nvb;
+                gPlayerObject->actionState = want;
+                gPlayerObject->Vel.y = u.f;
+                arena_export_dbg_cam(12, cur, want, nvb);   /* [contain] evidence */
+            }
         }
         /* Post-update re-assert. The game's camera update runs inside
          * func_80024744 and reverts our pose (measured: wrote (60,0,0), read
@@ -660,6 +677,23 @@ void arena_render_routine(void) {
         if (arena_export_puppet_ready()) {
             gPlayerObject->Pos.x = arena_export_puppet_wx(0);   /* absolute sim pos (no co-drive) */
             gPlayerObject->Pos.z = arena_export_puppet_wz(0);
+            /* Y: sim-driven WHILE AIRBORNE (round 6). The walker's own jump is
+             * a fixed mini-hop (~87 units, ~10 frames, hold-independent -
+             * measured, mode 12) while the sim's arc runs ~32 ticks; the
+             * visible player landed 20 ticks before the sim did, so a mid-air
+             * set looked like it killed the jump. The sim is the authority:
+             * follow its arc off the ground, hand Y back to the game's own
+             * grounding the moment the sim is grounded (flat arena floor). */
+            {
+                f32 sy = arena_export_player_y(0);
+                if (sy > 0.001f)
+                    gPlayerObject->Pos.y = arena_export_puppet_wy(0);
+            }
+            /* [ydrive] evidence (tag 13): Pos.y AS DRIVEN, sampled right here -
+             * the entry tag-7 sample reads the re-grounded value before this
+             * drive and can never see the write. */
+            arena_export_dbg_cam(13, fbits(gPlayerObject->Pos.y),
+                                     fbits(arena_export_player_y(0)), 0);
         }
         /* A1.2e: Rot.y = 180 - sim_yaw, DERIVED (not guessed) from the game's
          * own movement math: game moves along (+sin th, +cos th) (2BF00.c:480),
