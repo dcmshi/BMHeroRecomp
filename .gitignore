@@ -95,3 +95,7 @@ tools/*.png
 arena_bridge.log
 tools/rdcaps/
 tools/anims/
+# Oracle boot captures (vanilla-verbtable.log, battle-verbtable.log): ~430 KB of
+# evidence artifacts that live NEXT TO the committed goldens/timelines, so a
+# `git add -A` at push time would sweep them in.
+tools/oracle/*.log

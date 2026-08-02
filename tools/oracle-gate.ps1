@@ -1,5 +1,5 @@
 # Assert the ARENA build matches the single-player goldens (tools\oracle\goldens.json).
-# Five FAIL-able assertions; every expected value comes from the GAME, not from a
+# Seventeen FAIL-able assertions; every expected value comes from the GAME, not a
 # constant we chose (trap #1: a gate that asserts your own assumption cannot fail).
 # Falsify it with `$env:ARENA_SET_ANIM = '3'` - the soak launches inherit this
 # shell's env, so the gate must go red.
