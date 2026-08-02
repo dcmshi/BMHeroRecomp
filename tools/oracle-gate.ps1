@@ -208,6 +208,15 @@ Check "midair release plays the air toss" $atOK `
 # registered verb that PASSES also fails it, asking for the entry to be removed.
 # Without that second direction the register would rot into a permanent mute -
 # the vacuous green this whole instrument exists to prevent.
+#
+# COVERAGE FLOOR: the differ skips a verb whose [verb] marker never fired, so
+# without a count assertion six of the ten shared verbs could quietly leave the
+# comparison and this check would still print PASS. 10 is today's intersection
+# of kOracleScript and kBattleScript; >= so adding a shared verb never breaks
+# the gate, while losing one does. It also catches the wrong log being parsed
+# (this check reads arena_bridge.log, which only holds the mode-13 boot because
+# mode 13 is the LAST RunSoak above - move it and the count collapses).
+$AD_MIN_VERBS = 10
 $adScript = Join-Path $root "tools\anim-diff.ps1"
 $kdPath   = Join-Path $root "tools\oracle\known-divergences.json"
 # $ErrorActionPreference is Stop for this script; 2>&1 on a child process turns
@@ -221,9 +230,14 @@ if (-not (Test-Path $kdPath)) {
     Check "anim timelines match vanilla" $false "no known-divergence register at $kdPath"
 } else {
     $kd      = Get-Content $kdPath -Raw | ConvertFrom-Json
-    $kdNames = @($kd.PSObject.Properties.Name)
+    # an EMPTY register is the success state of the stale-exception rule, and
+    # @() around an empty property set yields @($null) - Count 1, element null -
+    # which used to fail this check with "never compared: " naming nothing.
+    $kdNames = @($kd.PSObject.Properties.Name | Where-Object { $_ })
     $adPass  = @($adOut | Select-String '^\[anim-diff\] (\S+) +PASS' | ForEach-Object { $_.Matches[0].Groups[1].Value })
     $adFail  = @($adOut | Select-String '^\[anim-diff\] (\S+) +FAIL' | ForEach-Object { $_.Matches[0].Groups[1].Value })
+    $adSum   = $adOut | Select-String '^\[anim-diff\] (\d+) verbs compared' | Select-Object -First 1
+    $adCount = if ($adSum) { [int]$adSum.Matches[0].Groups[1].Value } else { -1 }
     $adKnown   = @($adFail | Where-Object { $kdNames -contains $_ })
     $adUnknown = @($adFail | Where-Object { $kdNames -notcontains $_ })
     $adStale   = @($adPass | Where-Object { $kdNames -contains $_ })
@@ -234,10 +248,12 @@ if (-not (Test-Path $kdPath)) {
     if ($adStale.Count)   { $why += "stale exception - $($adStale -join ', ') now PASSES; REMOVE the entry from known-divergences.json" }
     if ($adAbsent.Count)  { $why += "registered verb never compared (marker missing?): $($adAbsent -join ', ')" }
     if ($adPass.Count -lt 1) { $why += "no verb passed at all" }
+    if ($adCount -lt $AD_MIN_VERBS) { $why += "only $adCount verbs compared, want >= $AD_MIN_VERBS (marker stopped firing, or the wrong log)" }
+    if ($adCount -ne ($adPass.Count + $adFail.Count)) { $why += "differ says $adCount verbs, $($adPass.Count + $adFail.Count) PASS/FAIL lines parsed" }
     if ($adExit -ne $adKnown.Count) { $why += "differ exit $adExit != $($adKnown.Count) registered failures" }
     Check "anim timelines match vanilla" ($why.Count -eq 0) `
           $(if ($why.Count) { $why -join '; ' }
-            else { "$($adPass.Count) passed, $($adKnown.Count) known-divergent, 0 unexpected" })
+            else { "$adCount verbs compared: $($adPass.Count) passed, $($adKnown.Count) known-divergent, 0 unexpected" })
 }
 
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
