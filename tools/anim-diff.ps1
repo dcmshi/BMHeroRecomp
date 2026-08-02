@@ -70,12 +70,27 @@ function Truncate($runs, [int]$budget) {
 # clip: vanilla's is the previous window's last run (timelines.json preserves
 # verb order), the arena's is the stream tick before the marker. A leading run
 # that is NOT the carried clip is real content and stays.
+#
+# LENGTH CAP: residue is short. Measured over every legitimate drop on the
+# mode-13 probe the maximum is 5 ticks (the arena's stick -> locomotion-clip
+# latency on carrywalk/windupwalk; the vanilla side's is 2-3). Without a cap the
+# rule deletes real content the moment a verb's own clip happens to equal the
+# previous one's - e.g. a kickrun marker would silently drop vanilla's [3,16],
+# sixteen frames of run-up. The cap is the measured maximum with NO headroom: a
+# longer residue should fail loudly, not quietly disappear.
+$CARRY_MAX = 5
 function DropCarried($runs, $carried) {
-    if ($null -ne $carried -and $runs.Count -gt 0 -and [int]$runs[0][0] -eq [int]$carried) {
+    if ($null -ne $carried -and $runs.Count -gt 0 -and [int]$runs[0][0] -eq [int]$carried -and
+        [int]$runs[0][1] -le $CARRY_MAX) {
         ,@($runs | Select-Object -Skip 1)
     } else { ,$runs }
 }
 function RunSum($runs) { $s = 0; foreach ($r in $runs) { $s += [int]$r[1] }; $s }
+function ObservedTicks([int]$t0, [int]$t1) {
+    $n = 0
+    for ($t = $t0; $t -lt $t1; $t++) { if ($stream.ContainsKey($t)) { $n++ } }
+    $n
+}
 
 # -Verbs is a gate's contract, so a name that matches no timeline is a usage
 # ERROR, not a silent skip (it would quietly compare fewer verbs than asked).
@@ -93,7 +108,7 @@ if ($Verbs) {
         Write-Host ("[anim-diff] known verbs: {0}" -f ($known -join ', ')); exit 1
     }
 }
-$fails = 0; $compared = 0; $totalRuns = 0
+$fails = 0; $compared = 0; $totalRuns = 0; $passedRuns = 0
 $prevVanillaIdx = $null
 foreach ($vp in $tl.PSObject.Properties) {
     $name = $vp.Name
@@ -114,6 +129,10 @@ foreach ($vp in $tl.PSObject.Properties) {
     $t1 = if ($next) { $next[0].t } else { [math]::Min($t0 + [int]$vp.Value.frames, $lastTick + 1) }
     $aAll = ArenaRuns $t0 $t1
     $aCarried = if ($stream.ContainsKey($t0 - 1)) { $stream[$t0 - 1] } else { $null }
+    # If the vanilla carried clip is unknown (the first window in the file has
+    # no predecessor) the arena must not drop either - a one-sided drop is the
+    # exact asymmetry this rule exists to remove.
+    if ($null -eq $vCarried) { $aCarried = $null }
     $vKeep = DropCarried $vAll $vCarried
     $aKeep = DropCarried $aAll $aCarried
     # compare as much of the two streams as BOTH actually carry
@@ -122,9 +141,18 @@ foreach ($vp in $tl.PSObject.Properties) {
     $aRuns = Truncate $aKeep $window
     $totalRuns += $vRuns.Count
     $bad = $null
-    if ($window -lt 4 -or $vRuns.Count -eq 0 -or $aRuns.Count -eq 0) {
+    # A SHORT arena stream must FAIL, not silently shrink the comparison: the
+    # window budget comes from the observed runs, so a probe that died 20 ticks
+    # into a 100-tick verb would otherwise "pass" over those 20. The header
+    # promises a dead probe is a failure. (For the last verb the window is
+    # already bounded by the last observed tick, so this costs nothing there.)
+    $observed = ObservedTicks $t0 $t1
+    if ($observed -lt ($t1 - $t0)) {
+        $bad = "arena stream incomplete - $observed of $($t1 - $t0) ticks observed in t$t0..t$t1"
+    } elseif ($vRuns.Count -eq 0 -or $aRuns.Count -eq 0) {
         # a window that truncates to nothing must not print PASS: "0 runs over
-        # 0f" is the vacuous green this whole tool exists to prevent.
+        # 0f" is the vacuous green this whole tool exists to prevent. A window
+        # that is merely SHORT but has runs on both sides compares normally.
         $bad = "collapsed window ${window}f - nothing to compare (vanilla $($vRuns.Count) runs, arena $($aRuns.Count) runs)"
     } elseif ($vRuns.Count -ne $aRuns.Count) {
         $bad = "run count vanilla=$($vRuns.Count) arena=$($aRuns.Count)"
@@ -138,8 +166,11 @@ foreach ($vp in $tl.PSObject.Properties) {
         }
     }
     if ($bad) { Write-Host ("[anim-diff] {0,-12} FAIL  {1}" -f $name, $bad); $fails++ }
-    else      { Write-Host ("[anim-diff] {0,-12} PASS  {1} runs over {2}f" -f $name, $vRuns.Count, $window) }
+    else      { Write-Host ("[anim-diff] {0,-12} PASS  {1} runs over {2}f" -f $name, $vRuns.Count, $window)
+                $passedRuns += $vRuns.Count }
 }
 if ($compared -eq 0) { Write-Host "[anim-diff] compared ZERO verbs - that is a failure, not a pass"; exit 1 }
-Write-Host ("[anim-diff] {0} verbs compared, {1} runs, {2} failed" -f $compared, $totalRuns, $fails)
+# both totals: $totalRuns counts every verb reached, $passedRuns only the ones
+# that actually agreed - a gate wanting "N runs really matched" needs the latter.
+Write-Host ("[anim-diff] {0} verbs compared, {1} runs ({2} in passing verbs), {3} failed" -f $compared, $totalRuns, $passedRuns, $fails)
 exit $fails
