@@ -354,15 +354,73 @@ if ($missing) { Write-Error "extraction incomplete - null: $($missing -join ', '
 
 Write-Host ("baselines: idle={0} walk={1} hold={2} jump={3}" -f $idleIdx, $walkIdx, $holdIdx, $jumpIdx)
 $new = $goldens | ConvertTo-Json -Depth 4
+# The COMPARE ignores `provenance` - fork_commit/date re-stamp on every run, so
+# including them makes "unchanged" unreachable and the check red by
+# construction. Every MEASURED field is still compared (name AND value, so an
+# added/dropped field still fails); the write still carries provenance, so
+# -Force refreshes it as before. Values, not bytes: the two PowerShell editions
+# serialise the same numbers differently (30 vs 30.0, indent width), which would
+# make the check red whenever it ran under a different shell than the writer.
+function GoldenFields([string]$json) {
+    $o = $json | ConvertFrom-Json
+    $o.PSObject.Properties.Remove('provenance')
+    ($o.PSObject.Properties | ForEach-Object {
+        $v = $_.Value
+        if     ($null -eq $v)       { $v = '<null>' }
+        elseif ($v -is [bool])      { $v = if ($v) { 'true' } else { 'false' } }
+        elseif ($v -is [array])     { $v = ($v -join '|') }
+        elseif ($v -is [ValueType]) { $v = ([double]$v).ToString([cultureinfo]::InvariantCulture) }
+        "$($_.Name)=$v"
+    }) -join "`n"
+}
 if ((Test-Path $out) -and -not $Force) {
     $old = Get-Content $out -Raw
-    if ($old.Trim() -ne $new.Trim()) {
+    if ((GoldenFields $old) -ne (GoldenFields $new)) {
         Write-Host "=== goldens DIFFER from checked-in (rerun with -Force to overwrite) ==="
         Write-Host "--- old ---`n$old`n--- new ---`n$new"
         exit 1
     }
-    Write-Host "goldens unchanged."; exit 0
+    Write-Host "goldens unchanged."
+} else {
+    New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
+    Set-Content -Path $out -Value $new
+    Write-Host "goldens written to $out`n$new"
 }
-New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
-Set-Content -Path $out -Value $new
-Write-Host "goldens written to $out`n$new"
+
+# ---- oracle 2.0: per-verb anim timelines (RLE) -------------------------------
+# Verb window = its marker's n to the NEXT marker's n. Runs of 1 frame are
+# transition jitter and are dropped. Refuse verbs with zero samples (the
+# round-10 vacuous-green lesson: an empty window must fail loudly, not write).
+$markers = @($lines | Select-String '\[oracle\] phase=(\S+) n=(\d+)' |
+    ForEach-Object { [pscustomobject]@{ name = $_.Matches[0].Groups[1].Value
+                                        n    = [int]$_.Matches[0].Groups[2].Value } })
+$timelines = [ordered]@{}
+for ($i = 0; $i -lt $markers.Count - 1; $i++) {
+    $m = $markers[$i]
+    if ($m.name -in @('in-level','DONE')) { continue }
+    $n0 = $m.n; $n1 = $markers[$i+1].n
+    $win = @($anim | Where-Object { $_.n -ge $n0 -and $_.n -lt $n1 })
+    if ($win.Count -eq 0) { Write-Error "timeline '$($m.name)' has ZERO anim samples - refusing to write"; exit 1 }
+    $runs = @(); $cur = $win[0].idx; $len = 0
+    foreach ($a in $win) {
+        if ($a.idx -eq $cur) { $len++ }
+        else { if ($len -ge 2) { $runs += ,@($cur, $len) }; $cur = $a.idx; $len = 1 }
+    }
+    if ($len -ge 2) { $runs += ,@($cur, $len) }
+    $timelines[$m.name] = [ordered]@{ frames = ($n1 - $n0); runs = $runs }
+}
+$tlOut = Join-Path $root "tools\oracle\timelines.json"
+$tlNew = $timelines | ConvertTo-Json -Depth 5
+# Compare VALUES, not bytes: Windows PowerShell and pwsh indent JSON differently
+# (and print 30.0 vs 30), so a byte compare goes red whenever the gate runs under
+# a different shell than the writer did - red by construction, same trap as the
+# provenance re-stamp. -Compress on both sides normalises that away.
+function NormJson([string]$json) { ($json | ConvertFrom-Json | ConvertTo-Json -Depth 5 -Compress) }
+if ((Test-Path $tlOut) -and -not $Force) {
+    $tlOld = Get-Content $tlOut -Raw
+    if ((NormJson $tlOld) -ne (NormJson $tlNew)) {
+        Write-Host "=== timelines DIFFER from checked-in (rerun with -Force to overwrite) ==="
+        Write-Host "--- old ---`n$tlOld`n--- new ---`n$tlNew"; exit 1
+    }
+    Write-Host "timelines unchanged."
+} else { Set-Content -Path $tlOut -Value $tlNew; Write-Host "timelines written to $tlOut" }
