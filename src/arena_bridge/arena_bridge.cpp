@@ -976,6 +976,27 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
      * where both the hand bomb and the windmill drew. */
     g_walker_anim = idx;
 
+    /* [animrun] (oracle 2.0): uncapped RLE of the walker's anim stream - on
+     * every index change, log how long the PREVIOUS clip held. The [anim]
+     * burst below stays as-is (the bespoke gates key on it); this channel is
+     * for anim-diff, which needs runs longer than the burst's 28-line cap.
+     * The final run before process exit is never flushed - the differ's
+     * min-window truncation absorbs it. */
+    {
+        static int run_idx = -1;
+        static int run_len = 0;
+        if (idx != run_idx) {
+            if (run_idx >= 0 && g_log) {
+                std::fprintf(g_log, "[animrun] idx=%d len=%d t%u\n",
+                             run_idx, run_len, g_state.tick);
+                std::fflush(g_log);
+            }
+            run_idx = idx; run_len = 1;
+        } else {
+            run_len++;
+        }
+    }
+
     /* Round 9 [carryw]: locomotion-while-carrying evidence ("feet don't move
      * while holding the bomb"). While player 0 carries AND moves, log the live
      * anim, bounded per hold episode so a soak can't flood the log. */
@@ -1069,6 +1090,17 @@ extern "C" void arena_oracle_phase(const char* name) {
     ensure_init();
     if (g_log) { std::fprintf(g_log, "[oracle] phase=%s n=%u\n", name, g_oracle_n);
                  std::fflush(g_log); }
+}
+
+/* Battle verb marker (oracle 2.0): the mode-13 script logs its named verbs
+ * so anim-diff can align arena timelines with the vanilla ones. Stamped with
+ * the SIM tick - [animrun] uses the same clock. */
+extern "C" void arena_verb_mark(const char* name) {
+    ensure_init();
+    if (g_log) {
+        std::fprintf(g_log, "[verb] %s t%u\n", name, g_state.tick);
+        std::fflush(g_log);
+    }
 }
 
 /* Heartbeat: in-level signal (mash-stop) + floor/player Y from the game's own

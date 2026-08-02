@@ -43,6 +43,7 @@
 #include "banjo_launcher.h"
 #include "recomp_data.h"
 #include "arena_bridge.h"
+#include "verb_script.h"
 #include "librecomp/game.hpp"
 extern "C" void arena_bridge_is_battle(uint8_t* rdram, recomp_context* ctx);  // export shim
 extern "C" void arena_export_tick_input(uint8_t* rdram, recomp_context* ctx);
@@ -673,128 +674,14 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
             static uint32_t op = 0;
             op++;
             if (op == 1)    arena_oracle_phase("in-level");
-            if (op >= 300 && op < 420) {                 /* locomotion baseline */
-                *y = -1.0f;
-                if (op == 300) arena_oracle_phase("walk");
-            }
-            if (op == 420)  arena_oracle_phase("stand"); /* 60 polls of idle */
-            if (op >= 480 && op < 484) {                 /* tap B: drop/short throw */
-                *buttons |= 0x4000;                       /* CONT_B */
-                if (op == 480) arena_oracle_phase("dropB");
-            }
-            /* 484-900: observe - covers the game bomb's own fuse + blast */
-            if (op >= 900 && op < 960) {                 /* hold B ... */
-                *buttons |= 0x4000;
-                if (op == 900) arena_oracle_phase("holdB");
-            }
-            if (op == 960)  arena_oracle_phase("releaseB"); /* ... throw */
-            /* 960-1260: observe flight + impact */
-            if (op >= 1260 && op < 1264) {               /* tap R: SET at feet */
-                *buttons |= 0x0010;                       /* CONT_R */
-                if (op == 1260) arena_oracle_phase("setR");
-            }
-            /* 1264-1320: observe - set anim + bomb at rest. Standing: the game
-             * walker stomps the set pose the moment the player moves. */
-            /* Stick signs are the amendment's INVERTED: -1.0f drives +Z, which
-             * is where the set bomb sits, so the plan's walkoff kicked it 20
-             * frames before kickrun. Windows also pulled ~60 polls earlier -
-             * the set bomb's fuse measured 106 frames (set n=632, blast n=738),
-             * expiring 18 frames into the plan's kickrun window. */
-            if (op >= 1320 && op < 1360) {               /* step clear of the set bomb */
-                *y = 1.0f;
-                if (op == 1320) arena_oracle_phase("walkoff");
-            }
-            if (op >= 1360 && op < 1420) {               /* run back in -> KICK */
-                *y = -1.0f;
-                if (op == 1360) arena_oracle_phase("kickrun");
-            }
-            /* 1560-1740: observe - kick anim + bomb slide */
-            if (op >= 1740 && op < 1746) {               /* jump ... */
-                *buttons |= 0x8000;                       /* CONT_A */
-                if (op == 1740) arena_oracle_phase("jumpA");
-            }
-            if (op >= 1752 && op < 1756) {               /* ... R mid-air: AIR SET */
-                *buttons |= 0x0010;
-                if (op == 1752) arena_oracle_phase("airsetR");
-            }
-            /* 1756-2100: observe - the air-set bomb fuses out at the feet
-             * (~106f), the blast tumbles the player (hit-clip golden), and the
-             * recovery finishes well before the round-9 segments below. */
-            /* ---- Round 9 (2026-08-01) ------------------------------------ */
-            /* CARRY-WALK: hold B (carry) and walk DURING the hold. Kept short
-             * (90 polls) so the hold never reaches the windup - this window
-             * measures locomotion-while-carrying, nothing else. */
-            if (op >= 2100 && op < 2190) {
-                *buttons |= 0x4000;                       /* CONT_B held */
-                if (op == 2100) arena_oracle_phase("carryB");
-            }
-            if (op >= 2130 && op < 2190) {                /* walk while carrying */
-                *y = -1.0f;
-                if (op == 2130) arena_oracle_phase("carrywalk");
-            }
-            if (op == 2190) arena_oracle_phase("carryrel");
-            /* 2190-2400: observe the release throw + impact, then settle. */
-            /* WINDUP TIMING: a long stationary hold. The goldens want the
-             * windmill clip's index AND how many frames after B-down it starts
-             * (the arena hides the hand bomb on this clip - overlap frames were
-             * feel round 9's bug (d)). 360 polls = 6s, generous. */
-            if (op >= 2400 && op < 2880) {                /* B held THROUGHOUT */
-                *buttons |= 0x4000;
-                if (op == 2400) arena_oracle_phase("holdlong");
-            }
-            /* WINDUP+WALK (round 10): still holding, well past the windmill
-             * start (62f golden; 2760 = 180f into the hold) - now WALK. Does
-             * vanilla have a charge-run clip, keep windmilling with frozen
-             * feet, or refuse to move at all? [oracle-player] XZ answers the
-             * moves-at-all half; the anim channel answers the clip half. */
-            if (op >= 2760 && op < 2880) {
-                *y = -1.0f;
-                if (op == 2760) arena_oracle_phase("windupwalk");
-            }
-            if (op == 2880) arena_oracle_phase("spreadrel");
-            /* The spread fan (4 bombs = the WHOLE pool [2..5]) lands AROUND
-             * the release point and the bombs sit on their fuses ~106f - a
-             * set attempted before the pool clears SILENTLY spawns nothing
-             * (Get_InactiveObject; the round-10 first run measured a jump
-             * over empty floor). Walk clear, then wait the fuses + blasts
-             * + tumble recovery out before setting. */
-            if (op >= 2900 && op < 2960) *y = 1.0f;       /* step clear of the fan */
-            /* STAND-ON-BOMB: set at the feet, jump STRAIGHT UP, land back on
-             * the bomb. No run-in (a grounded walk-back would KICK it) and the
-             * XZ stays aligned by construction. playerY between the landing
-             * and the fuse-out (~106f after set) is the standing height. */
-            if (op >= 3300 && op < 3304) {
-                *buttons |= 0x0010;                       /* CONT_R: set */
-                if (op == 3300) arena_oracle_phase("setR2");
-            }
-            if (op >= 3340 && op < 3346) {
-                *buttons |= 0x8000;                       /* CONT_A: jump up */
-                if (op == 3340) arena_oracle_phase("jumpon");
-            }
-            /* 3346-3600: land on the bomb, stand until the blast. */
-            /* CARRY-JUMP + MIDAIR RELEASE (round 11): hold B, jump, release B
-             * just past the apex. Answers three unmeasured questions at once:
-             * does vanilla even allow jumping while carrying (playerY rises
-             * with B held), which clip rides the carried ascent, and what the
-             * midair release does - clip AND any vertical impulse (the arena's
-             * round-10 throw pose mid-air "looks like it's pushing bomberman
-             * up"; release on the DESCENT so a real kick shows against a
-             * falling baseline). Jump at 3700 -> apex ~+40 polls (20f). */
-            /* Windows in POLLS (2:1 vs frames): B held 3680-3744 = 32 ticks,
-             * safely uncharged; the measured vanilla jump is airborne ~32f
-             * (rise ~16f), so A at 3700 puts the apex ~3732 and the release
-             * at 3744 = ~6f into the descent, ~10f before the landing. */
-            if (op >= 3680 && op < 3744) {
-                *buttons |= 0x4000;                       /* CONT_B: carry */
-                if (op == 3680) arena_oracle_phase("carryjump");
-            }
-            if (op >= 3700 && op < 3706) {
-                *buttons |= 0x8000;                       /* CONT_A: jump */
-                if (op == 3700) arena_oracle_phase("jumpB");
-            }
-            if (op == 3744) arena_oracle_phase("relairB"); /* B off, descending */
-            /* 3744-3980: observe - the released bomb + the landing. */
-            if (op == 4000) arena_oracle_phase("DONE");
+            /* The whole choreography is the table in verb_script.h, in TICKS;
+             * verb_apply owns the 2-polls-per-tick conversion. */
+            uint16_t vb = 0; float vy = 0.0f;
+            verb_apply(kOracleScript,
+                       (int)(sizeof(kOracleScript)/sizeof(kOracleScript[0])),
+                       op, &vb, &vy, arena_oracle_phase);
+            *buttons |= vb;
+            if (vy != 0.0f) *y = vy;
         }
         return ok;
     }
@@ -897,32 +784,27 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 /* Round 9 probe: (a) CARRY-WALK - hold B and move; the bridge
                  * burst-logs the walker's live anim as [carryw] so the gate can
                  * assert the carry-walk clip plays WITH the frame advancing
-                 * (feet froze in round 9). Hold is 100 polls (~100 ticks),
-                 * safely under TUNE_SPREAD_TICKS (120) - no spread, and any
+                 * (feet froze in round 9). The charged hold is 100 ticks: past
+                 * the windup start (62t, golden) so the charge-hide fires,
+                 * still under TUNE_SPREAD_TICKS (120) - no spread, and any
                  * windup the WALKER starts on its own clock is welcome
                  * evidence for the charge-hide. (b) STAND-ON-BOMB - set at the
                  * feet, jump straight up, land back on the bomb; [pstand]
                  * (dbg_cam tag 15) samples the final post-drive Pos.y each
-                 * frame. Same trap as mode 10: polls run ~45 ahead of the sim
-                 * tick, everything starts after the 180-tick countdown. */
-                /* POLLS RUN 2:1 AGAINST TICKS (measured: [throw] t241 at cp
-                 * 350 vs [setdbg] t306 at cp 480 - 130 polls = 65 ticks), so
-                 * every window below is twice its tick length. The B hold is
-                 * 100 ticks: past the windup start (62t, golden) so the
-                 * charge-hide fires, still under TUNE_SPREAD_TICKS (120). */
+                 * frame. Same trap as mode 10: the script origin sits ~66 ticks
+                 * into the run, so everything is past the 180-tick countdown. */
                 static uint32_t cp = 0;
                 cp++;
-                if (cp >= 250 && cp < 450) *buttons |= 0x4000;   /* CONT_B: carry */
-                if (cp >= 280 && cp < 400) *y = -1.0f;           /* ...and walk  */
-                /* release at 450 = forward throw, lands well away */
-                /* round 11: CARRY-JUMP + MIDAIR RELEASE (uncharged, 32t hold;
-                 * jump 10t in; sim arc ~32t puts the apex ~cp552, so the B-up
-                 * at 564 releases ~6t into the descent - the [pstand]/[anim]
-                 * channels then show any Y kick and which clip plays). */
-                if (cp >= 500 && cp < 564) *buttons |= 0x4000;   /* CONT_B: carry */
-                if (cp >= 520 && cp < 526) *buttons |= 0x8000;   /* CONT_A: jump */
-                if (cp >= 640 && cp < 652) *buttons |= 0x0010;   /* CONT_R: set  */
-                if (cp >= 690 && cp < 696) *buttons |= 0x8000;   /* CONT_A: jump */
+                /* The choreography is kBattleScript in verb_script.h, in TICKS
+                 * (verb_apply owns the 2:1 conversion); its named verbs are
+                 * prefix-shaped copies of the vanilla ones so anim-diff can
+                 * align the two timelines. Markers land as [verb] lines. */
+                uint16_t vb = 0; float vy = 0.0f;
+                verb_apply(kBattleScript,
+                           (int)(sizeof(kBattleScript)/sizeof(kBattleScript[0])),
+                           cp, &vb, &vy, arena_verb_mark);
+                *buttons |= vb;
+                if (vy != 0.0f) *y = vy;
                 /* stand on the bomb until its fuse (~150 ticks after the set)
                  * blows; [pstand] carries the landing plateau by then */
             }

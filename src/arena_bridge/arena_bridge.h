@@ -118,6 +118,7 @@ int   arena_contain_player_vely(int velybits, int correcting); /* + last non-pus
 int   arena_oracle_mode(void);    /* 1 iff ARENA_ORACLE=1 (cached) */
 int   arena_oracle_seen(void);    /* 1 once the in-level routine has run (mash-stop) */
 void  arena_oracle_phase(const char* name);  /* main.cpp phase markers -> log */
+void  arena_verb_mark(const char* name);     /* battle verb markers -> [verb] */
 void  arena_oracle_frame(int level, int playerValid, int floorYbits, int playerYbits);
 void  arena_oracle_anim(int idx, int framebits, int state);
 void  arena_oracle_obj(int slot_state, int xbits, int ybits, int zbits);
