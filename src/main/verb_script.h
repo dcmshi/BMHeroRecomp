@@ -11,7 +11,11 @@ typedef struct {
     uint32_t    start;   /* ticks */
     uint32_t    dur;     /* ticks; 0 = marker only */
     uint16_t    buttons; /* N64 mask OR'd in while active */
-    int8_t      stick_y; /* -1 / 0 / +1 full deflection */
+    int8_t      stick_y; /* -1 / 0 / +1 full deflection. THE SIGNS READ
+                          * INVERTED: -1 drives +Z, which is where a set bomb
+                          * sits. Flipping one to "correct" a direction stops
+                          * the goldens reproducing - an uninverted walkoff
+                          * kicked the set bomb 20 frames before kickrun. */
 } VerbRow;
 
 #define VERB_A 0x8000
@@ -38,7 +42,11 @@ static const VerbRow kOracleScript[] = {
     { "holdlong", 1200, 240, VERB_B,  0 },   /* B held through windupwalk */
     { "windupwalk",1380, 60, 0,      -1 },
     { "spreadrel",1440,   0, 0,       0 },
-    { NULL,       1450,  30, 0,      +1 },   /* step clear of the spread fan */
+    /* Step clear of the spread fan, then WAIT: the fan is 4 bombs = the game's
+     * WHOLE pool [2..5], and a set attempted before they fuse out (~106f, the
+     * vanilla set-bomb fuse) SILENTLY spawns nothing (Get_InactiveObject) -
+     * which is why setR2 sits 200 ticks later, not 20. */
+    { NULL,       1450,  30, 0,      +1 },
     { "setR2",    1650,   2, VERB_R,  0 },
     { "jumpon",   1670,   3, VERB_A,  0 },
     { "carryjump",1840,  32, VERB_B,  0 },   /* B held to the midair release */
