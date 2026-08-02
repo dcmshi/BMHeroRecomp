@@ -980,8 +980,13 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
      * every index change, log how long the PREVIOUS clip held. The [anim]
      * burst below stays as-is (the bespoke gates key on it); this channel is
      * for anim-diff, which needs runs longer than the burst's 28-line cap.
-     * The final run before process exit is never flushed - the differ's
-     * min-window truncation absorbs it. */
+     * The run still open at process exit is never flushed, so the stream ENDS
+     * BEFORE THE LOG DOES. Min-window truncation does not absorb that (this
+     * comment used to claim it did, and it is false): the last verb has no
+     * next marker, so its window came from the vanilla frame count and ran off
+     * the end of the observed data - measured on the mode-13 probe, jumpon's
+     * ticks 695-713 are simply absent. anim-diff bounds the final window by
+     * the last tick present in the reconstructed stream instead. */
     {
         static int run_idx = -1;
         static int run_len = 0;
