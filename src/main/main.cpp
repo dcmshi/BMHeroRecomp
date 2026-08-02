@@ -738,27 +738,41 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
              * windmill clip's index AND how many frames after B-down it starts
              * (the arena hides the hand bomb on this clip - overlap frames were
              * feel round 9's bug (d)). 360 polls = 6s, generous. */
-            if (op >= 2400 && op < 2760) {
+            if (op >= 2400 && op < 2880) {                /* B held THROUGHOUT */
                 *buttons |= 0x4000;
                 if (op == 2400) arena_oracle_phase("holdlong");
             }
-            if (op == 2760) arena_oracle_phase("spreadrel");
-            /* 2760-3000: observe the (possibly multi-bomb) release; recovery
-             * buffer in case a near blast tumbles the player. */
+            /* WINDUP+WALK (round 10): still holding, well past the windmill
+             * start (62f golden; 2760 = 180f into the hold) - now WALK. Does
+             * vanilla have a charge-run clip, keep windmilling with frozen
+             * feet, or refuse to move at all? [oracle-player] XZ answers the
+             * moves-at-all half; the anim channel answers the clip half. */
+            if (op >= 2760 && op < 2880) {
+                *y = -1.0f;
+                if (op == 2760) arena_oracle_phase("windupwalk");
+            }
+            if (op == 2880) arena_oracle_phase("spreadrel");
+            /* The spread fan (4 bombs = the WHOLE pool [2..5]) lands AROUND
+             * the release point and the bombs sit on their fuses ~106f - a
+             * set attempted before the pool clears SILENTLY spawns nothing
+             * (Get_InactiveObject; the round-10 first run measured a jump
+             * over empty floor). Walk clear, then wait the fuses + blasts
+             * + tumble recovery out before setting. */
+            if (op >= 2900 && op < 2960) *y = 1.0f;       /* step clear of the fan */
             /* STAND-ON-BOMB: set at the feet, jump STRAIGHT UP, land back on
              * the bomb. No run-in (a grounded walk-back would KICK it) and the
              * XZ stays aligned by construction. playerY between the landing
              * and the fuse-out (~106f after set) is the standing height. */
-            if (op >= 3000 && op < 3004) {
+            if (op >= 3300 && op < 3304) {
                 *buttons |= 0x0010;                       /* CONT_R: set */
-                if (op == 3000) arena_oracle_phase("setR2");
+                if (op == 3300) arena_oracle_phase("setR2");
             }
-            if (op >= 3040 && op < 3046) {
+            if (op >= 3340 && op < 3346) {
                 *buttons |= 0x8000;                       /* CONT_A: jump up */
-                if (op == 3040) arena_oracle_phase("jumpon");
+                if (op == 3340) arena_oracle_phase("jumpon");
             }
-            /* 3046-3300: land on the bomb, stand until the blast. */
-            if (op == 3300) arena_oracle_phase("DONE");
+            /* 3346-3600: land on the bomb, stand until the blast. */
+            if (op == 3600) arena_oracle_phase("DONE");
         }
         return ok;
     }

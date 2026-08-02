@@ -150,5 +150,33 @@ if ($psY.Count -ge 30 -and $orig) {
           ("legal lifts: {0}; {1}" -f ($legal -join '/'), $(if ($null -ne $badPlateau) { "ILLEGAL plateau at +$badPlateau" } else { "all plateaus legal" }))
 } else { Check "no invisible box on bombs" $false "pstand samples=$($psY.Count), setdbg=$([bool]$orig)" }
 
+# --- check 14: the release plays the throw clip (round 10; same mode-13 boot) -
+# The walker's own throw trigger is a ONE-SHOT that can land on the carry
+# window's closing frame and get dropped - then nothing re-asserts and the hold
+# clip stayed up while the bomb arced ("sometimes the throw animation doesn't
+# play"). The bridge drives the golden clip on the HELD->AIRBORNE edge; first
+# contiguous run, same rationale as the airset check.
+$thFrames = @()
+foreach ($l in @($m13 | Select-String "\[anim\] idx=(\d+) frame=(\d+)")) {
+    $ix = [int]$l.Matches[0].Groups[1].Value
+    if ($ix -eq $g.throw_anim_idx) { $thFrames += [int]$l.Matches[0].Groups[2].Value }
+    elseif ($thFrames.Count -gt 0) { break }
+}
+$thOK = ($thFrames.Count -ge 2) -and
+        (($thFrames | Measure-Object -Maximum).Maximum -gt $thFrames[0]) -and
+        ([math]::Abs($thFrames.Count - $g.throw_anim_frames) -le 3)
+Check "release plays the throw clip" $thOK `
+      "golden idx=$($g.throw_anim_idx) x$($g.throw_anim_frames), first run $($thFrames.Count) frames"
+
+# --- check 15: charged movement moves the feet (round 10) ---------------------
+# The windmill (windup_anim_idx) has static legs; vanilla switches to a distinct
+# charge-run clip (windup_walk_anim_idx) while moving. [carryw] logs only while
+# carrying AND moving, so the windmill must never appear there, and the golden
+# charge-run clip must play with frames advancing.
+$cwWind = @($m13 | Select-String "\[carryw\] idx=$($g.windup_anim_idx) ")
+$cwRun  = @($m13 | Select-String "\[carryw\] idx=$($g.windup_walk_anim_idx) frame=(\d+)")
+Check "charged movement moves the feet" (($cwWind.Count -eq 0) -and (Advanced $cwRun)) `
+      "windmill($($g.windup_anim_idx)) while moving: $($cwWind.Count) (want 0); charge-run($($g.windup_walk_anim_idx)): $($cwRun.Count) frames"
+
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

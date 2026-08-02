@@ -33,7 +33,8 @@ $knobs = @("ARENA_SET_ANIM","ARENA_KICK_ANIM","ARENA_POSE_FRAMES","ARENA_POSE_MO
            "ARENA_KICK_POSE_FRAMES","ARENA_HIT_ANIM","ARENA_HIT_POSE_FRAMES",
            "ARENA_AIRSET_ANIM","ARENA_AIRSET_POSE_FRAMES","ARENA_CARRY_IDLE_ANIM",
            "ARENA_CARRY_WALK_ANIM","ARENA_WINDUP_ANIM","ARENA_WINDUP_START",
-           "ARENA_JUMP_ANIM",
+           "ARENA_JUMP_ANIM","ARENA_THROW_ANIM","ARENA_THROW_POSE_FRAMES",
+           "ARENA_WINDUP_WALK_ANIM",
            "ARENA_CAM_DIST","ARENA_CAM_PITCH","ARENA_CAM_YAW","ARENA_CAM_FOLLOW",
            "ARENA_CAM_OFF","ARENA_CAM_ZFAR","ARENA_AUTO_BATTLE","ARENA_ANIM_SWEEP",
            "ARENA_PROBE_AXIS","ARENA_RASTER_N","ARENA_RASTER_STEP","ARENA_ORACLE")
@@ -91,6 +92,7 @@ $nJump = PhaseN 'jumpA';    $nAirset = PhaseN 'airsetR'
 # round 9 segments
 $nCarryB = PhaseN 'carryB';   $nCarryW   = PhaseN 'carrywalk'
 $nCarryR = PhaseN 'carryrel'; $nHoldLong = PhaseN 'holdlong'
+$nWupWalk = PhaseN 'windupwalk'
 $nSpread = PhaseN 'spreadrel'
 $nSet2   = PhaseN 'setR2';    $nJumpOn   = PhaseN 'jumpon'
 
@@ -196,6 +198,13 @@ if ($kicked.Count -ge 2) {
     if ($dn -gt 0) { $kickSpeed = [math]::Round($dist / $dn, 2) }
 }
 
+$player = $lines | Select-String '\[oracle-player\] n=(\d+) slot=\d+ state=(\d+) pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)' |
+    ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
+                                        st = [int]$_.Matches[0].Groups[2].Value
+                                        x = [double]$_.Matches[0].Groups[3].Value
+                                        y = [double]$_.Matches[0].Groups[4].Value
+                                        z = [double]$_.Matches[0].Groups[5].Value } }
+
 # ---- round 9 extractions ----------------------------------------------------
 # CARRY-WALK: the clip while holding B AND moving, and whether its frame counter
 # ADVANCES (round 9: the arena froze the feet). Baseline = the carry idle from
@@ -213,14 +222,29 @@ if ($cwSame.Count -ge 2) {
 # charge-hide must key on the clip, not a timer - overlap frames otherwise).
 # Tail = the last third of the ACTUAL window (the n clock ticks once per FRAME,
 # half the poll rate - a fixed +240 poll offset overshot the window entirely
-# on the first run; measure the instrument).
-$windupIdx = DominantIdx ($nHoldLong + [int](2 * ($nSpread - $nHoldLong) / 3)) $nSpread
+# on the first run; measure the instrument). The stationary window ends where
+# the round-10 windupwalk segment begins.
+$windupIdx = DominantIdx ($nHoldLong + [int](2 * ($nWupWalk - $nHoldLong) / 3)) $nWupWalk
 $windupStart = $null
 if ($windupIdx -ge 0 -and $windupIdx -ne $holdIdx -and $windupIdx -ne $idleIdx) {
-    $first = $anim | Where-Object { $_.n -ge $nHoldLong -and $_.n -lt $nSpread -and
+    $first = $anim | Where-Object { $_.n -ge $nHoldLong -and $_.n -lt $nWupWalk -and
                                     $_.idx -eq $windupIdx } | Select-Object -First 1
     if ($first) { $windupStart = $first.n - $nHoldLong }
 } else { $windupIdx = $null }
+
+# WINDUP+WALK (round 10): the clip while charged AND stick held - and whether
+# vanilla lets the player MOVE at all in that state ([oracle-player] XZ
+# displacement over the window). Three possible verdicts: a distinct
+# charge-run clip; the windmill with frozen feet (idx == windup); or no
+# movement at all (moves=false - the arena, which DOES allow charged movement,
+# then has no vanilla clip to copy and needs a design stand-in).
+$windupWalkIdx = DominantIdx ($nWupWalk + 10) $nSpread
+$wupP = @($player | Where-Object { $_.n -ge ($nWupWalk + 10) -and $_.n -lt $nSpread })
+$windupWalkMoves = $false
+if ($wupP.Count -ge 2) {
+    $dx = $wupP[-1].x - $wupP[0].x; $dz = $wupP[-1].z - $wupP[0].z
+    $windupWalkMoves = ([math]::Sqrt($dx*$dx + $dz*$dz) -gt 50.0)
+}
 
 # STAND-ON-BOMB: set at the feet, jump straight up, land back on it. The lift is
 # the playerY plateau (>=8 consecutive samples within 0.5) between the landing
@@ -228,12 +252,6 @@ if ($windupIdx -ge 0 -and $windupIdx -ne $holdIdx -and $windupIdx -ne $idleIdx) 
 # between the player and the bomb over the same window says whether the player
 # actually came down ON it ("landed beside it" and "clipped through it" have
 # the same playerY).
-$player = $lines | Select-String '\[oracle-player\] n=(\d+) slot=\d+ state=(\d+) pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)' |
-    ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
-                                        st = [int]$_.Matches[0].Groups[2].Value
-                                        x = [double]$_.Matches[0].Groups[3].Value
-                                        y = [double]$_.Matches[0].Groups[4].Value
-                                        z = [double]$_.Matches[0].Groups[5].Value } }
 function XZGap([int]$n0, [int]$n1) {
     # mean player<->bomb XZ distance over [n0,n1) using per-n pairing
     $b = @{}; $bomb | Where-Object { $_.n -ge $n0 -and $_.n -lt $n1 } |
@@ -286,6 +304,8 @@ $goldens = [ordered]@{
     carry_walk_advances    = $carryWalkAdv
     windup_anim_idx        = $windupIdx
     windup_start_frames    = $windupStart
+    windup_walk_anim_idx   = $windupWalkIdx
+    windup_walk_moves      = $windupWalkMoves
     bomb_stand_lift        = $standLift
     bomb_stand_supported   = $standSupported
     bomb_stand_xz_gap      = $standGap

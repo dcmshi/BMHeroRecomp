@@ -215,6 +215,40 @@ static int arena_jump_anim_index(void) {
     }();
     return idx;
 }
+/* THROW clip (round 10): driven on the HELD->AIRBORNE edge. The walker's own
+ * throw trigger is a ONE-SHOT that can land on the carry window's closing
+ * frame and get dropped by the gate - then nothing re-asserts (the round-9
+ * airset lesson) and the HOLD clip stayed up while the bomb arced
+ * ("sometimes the throw animation doesn't play"). Goldens: throw 29 x 10f. */
+static int arena_throw_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_THROW_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 29;
+    }();
+    return idx;
+}
+static int arena_throw_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_THROW_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 10;
+    }();
+    return n;
+}
+/* WINDUP+WALK clip (round 10): what the body does when the charge is armed
+ * AND the player is moving. Vanilla HAS a distinct charge-run clip - the
+ * windupwalk oracle segment measured 28 (state 21) with real XZ displacement
+ * (goldens windup_walk_anim_idx 28, windup_walk_moves true), so the golden
+ * wins over the carry-walk stand-in this shipped with for one build. */
+static int arena_windupwalk_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_WINDUP_WALK_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 28;
+    }();
+    return idx;
+}
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -365,9 +399,13 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         float cvz    = qf(g_state.players[0].vel.z);
         bool  moving = (cvx * cvx + cvz * cvz) >= 0.0025f;
         int want;
-        if (timer >= arena_windup_start_frames()) want = arena_windup_anim_index();
-        else                                      want = moving ? arena_carrywalk_anim_index()
-                                                                : arena_carryidle_anim_index();
+        if (timer >= arena_windup_start_frames())
+            /* round 10: the windmill (26) has static legs - while MOVING the
+             * charged carry needs a walking clip or the feet freeze */
+            want = moving ? arena_windupwalk_anim_index() : arena_windup_anim_index();
+        else
+            want = moving ? arena_carrywalk_anim_index()
+                          : arena_carryidle_anim_index();
         if (want >= 0) {
             g_pose_anim   = want;
             g_pose_frames = 2;   /* survives this frame's dbg_anim decrement, so
@@ -385,6 +423,17 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
          * throw probe can prove impact detonation by latency ([blastvis] tick
          * minus [throw] tick << TUNE_FUSE_TICKS). */
         if (g_bomb_prev_state[b] == BSTATE_HELD && now == BSTATE_AIRBORNE) {
+            /* THROW pose (round 10): drive the golden throw clip here - the
+             * walker's own one-shot trigger can land on the carry window's
+             * closing frame and get eaten; then nothing re-asserts and the
+             * hold clip stayed up while the bomb arced. Idempotent with the
+             * walker's write when it DOES survive (same idx = gate passes it
+             * through). The spread release fires this edge once per bomb,
+             * same value each time. */
+            if (g_state.bombs[b].owner == 0 && arena_throw_anim_index() >= 0) {
+                g_pose_anim   = arena_throw_anim_index();
+                g_pose_frames = arena_throw_pose_frames();
+            }
             if (g_log) {
                 std::fprintf(g_log, "[throw] t%u bomb=%d owner=%d\n",
                              g_state.tick, b, (int)g_state.bombs[b].owner);
