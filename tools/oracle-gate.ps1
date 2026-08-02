@@ -120,10 +120,12 @@ $m13 = RunSoak @("-N","1","-Mode","13","-TimeoutSec","130","-Expect","\[hitpose\
 $cwLines = @($m13 | Select-String "\[carryw\] idx=$($g.carry_walk_anim_idx) frame=(\d+)")
 Check "carry-walk clip plays" ((Advanced $cwLines)) `
       "golden idx=$($g.carry_walk_anim_idx), saw $($cwLines.Count) moving-carry frames"
-# the hand bomb hides the moment the windup clip is up (round-9 overlap frames)
-$ch = @($m13 | Select-String "\[chargehide\] anim=$($g.windup_anim_idx) ")
+# the hand bomb hides the moment the charge window opens (round-9 overlap
+# frames; round 11 keys it on the golden TIMER, which also covers the
+# charge-run clip - the clip-26 check missed charged MOVEMENT)
+$ch = @($m13 | Select-String "\[chargehide\] tm=$($g.windup_start_frames) ")
 Check "charge hides the hand bomb" ($ch.Count -ge 1) `
-      "golden windup idx=$($g.windup_anim_idx) @$($g.windup_start_frames)f, chargehide lines=$($ch.Count)"
+      "golden windup start $($g.windup_start_frames)f, chargehide-at-threshold lines=$($ch.Count)"
 # landing on a set bomb: the old airborne-only Y handback let the walker ground
 # on the bomb ACTOR's box (plateau at floor+210). Any sustained plateau must be
 # at a vanilla-legal height: the floor, or (only if vanilla supports standing
@@ -177,6 +179,22 @@ $cwWind = @($m13 | Select-String "\[carryw\] idx=$($g.windup_anim_idx) ")
 $cwRun  = @($m13 | Select-String "\[carryw\] idx=$($g.windup_walk_anim_idx) frame=(\d+)")
 Check "charged movement moves the feet" (($cwWind.Count -eq 0) -and (Advanced $cwRun)) `
       "windmill($($g.windup_anim_idx)) while moving: $($cwWind.Count) (want 0); charge-run($($g.windup_walk_anim_idx)): $($cwRun.Count) frames"
+
+# --- check 16: the MIDAIR release plays the air-throw clip (round 11) ---------
+# A midair release is its own verb: vanilla plays a quick toss (air_throw_*),
+# not the grounded lean - which mid-flight read as "pushing bomberman up".
+# Mode 13's second carry releases ~6 ticks into the jump's descent.
+$atFrames = @()
+foreach ($l in @($m13 | Select-String "\[anim\] idx=(\d+) frame=(\d+)")) {
+    $ix = [int]$l.Matches[0].Groups[1].Value
+    if ($ix -eq $g.air_throw_anim_idx) { $atFrames += [int]$l.Matches[0].Groups[2].Value }
+    elseif ($atFrames.Count -gt 0) { break }
+}
+$atOK = ($atFrames.Count -ge 2) -and
+        (($atFrames | Measure-Object -Maximum).Maximum -gt $atFrames[0]) -and
+        ([math]::Abs($atFrames.Count - $g.air_throw_anim_frames) -le 2)
+Check "midair release plays the air toss" $atOK `
+      "golden idx=$($g.air_throw_anim_idx) x$($g.air_throw_anim_frames), first run $($atFrames.Count) frames"
 
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

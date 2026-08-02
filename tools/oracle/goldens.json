@@ -22,6 +22,11 @@
   "windup_start_frames": 62,
   "windup_walk_anim_idx": 28,
   "windup_walk_moves": true,
+  "carry_jump_allowed": true,
+  "carry_jump_anim_idx": 20,
+  "air_throw_anim_idx": 21,
+  "air_throw_anim_frames": 3,
+  "air_throw_y_rise": 0.0,
   "bomb_stand_lift": 0.0,
   "bomb_stand_supported": false,
   "bomb_stand_xz_gap": 30.0,
@@ -37,7 +42,7 @@
     "fun / overall feel"
   ],
   "provenance": {
-    "fork_commit": "4f4a7b3",
+    "fork_commit": "b80e4c8",
     "date": "2026-08-01",
     "level": 0
   }

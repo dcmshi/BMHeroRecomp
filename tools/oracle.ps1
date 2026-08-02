@@ -34,7 +34,8 @@ $knobs = @("ARENA_SET_ANIM","ARENA_KICK_ANIM","ARENA_POSE_FRAMES","ARENA_POSE_MO
            "ARENA_AIRSET_ANIM","ARENA_AIRSET_POSE_FRAMES","ARENA_CARRY_IDLE_ANIM",
            "ARENA_CARRY_WALK_ANIM","ARENA_WINDUP_ANIM","ARENA_WINDUP_START",
            "ARENA_JUMP_ANIM","ARENA_THROW_ANIM","ARENA_THROW_POSE_FRAMES",
-           "ARENA_WINDUP_WALK_ANIM",
+           "ARENA_WINDUP_WALK_ANIM","ARENA_CARRY_JUMP_ANIM",
+           "ARENA_AIR_THROW_ANIM","ARENA_AIR_THROW_POSE_FRAMES",
            "ARENA_CAM_DIST","ARENA_CAM_PITCH","ARENA_CAM_YAW","ARENA_CAM_FOLLOW",
            "ARENA_CAM_OFF","ARENA_CAM_ZFAR","ARENA_AUTO_BATTLE","ARENA_ANIM_SWEEP",
            "ARENA_PROBE_AXIS","ARENA_RASTER_N","ARENA_RASTER_STEP","ARENA_ORACLE")
@@ -95,6 +96,9 @@ $nCarryR = PhaseN 'carryrel'; $nHoldLong = PhaseN 'holdlong'
 $nWupWalk = PhaseN 'windupwalk'
 $nSpread = PhaseN 'spreadrel'
 $nSet2   = PhaseN 'setR2';    $nJumpOn   = PhaseN 'jumpon'
+# round 11 segments
+$nCarryJ = PhaseN 'carryjump'; $nJumpB = PhaseN 'jumpB'
+$nRelAir = PhaseN 'relairB'
 
 $anim = $lines | Select-String '\[oracle-anim\] n=(\d+) idx=(\d+) frame=([\d.]+)' |
     ForEach-Object { [pscustomobject]@{ n = [int]$_.Matches[0].Groups[1].Value
@@ -282,6 +286,22 @@ if ($null -ne $standBase) {
     }
 }
 
+# ---- round 11 extractions ---------------------------------------------------
+# CARRY-JUMP: does vanilla jump at all with B held (playerY rises after jumpB)?
+# Which clip rides the carried ascent? And what does the MIDAIR RELEASE do -
+# clip, and any vertical impulse (playerY must keep FALLING through a release
+# on the descent; a rise is a kick).
+$cjWin = @($frameLn | Where-Object { $_.n -gt $nJumpB -and $_.n -lt $nRelAir })
+$cjPeak = if ($cjWin.Count) { ($cjWin.py | Measure-Object -Maximum).Maximum } else { 0 }
+$carryJumpAllowed = ($null -ne $standBase) -and ($cjPeak - $standBase -gt 100)
+$carryJumpIdx = DominantIdx ($nJumpB + 4) $nRelAir
+$airThrow = ClipAfter $nRelAir @($idleIdx, $holdIdx, $jumpIdx, $carryJumpIdx)
+$relWin = @($frameLn | Where-Object { $_.n -ge $nRelAir -and $_.n -lt ($nRelAir + 12) })
+$airThrowYRise = $null
+if ($relWin.Count -ge 6) {
+    $airThrowYRise = [math]::Round((($relWin.py | Measure-Object -Maximum).Maximum - $relWin[0].py), 1)
+}
+
 $goldens = [ordered]@{
     set_anim_idx           = if ($set)    { $set.idx }       else { $null }
     set_anim_frames        = if ($set)    { $set.frames }    else { $null }
@@ -306,6 +326,11 @@ $goldens = [ordered]@{
     windup_start_frames    = $windupStart
     windup_walk_anim_idx   = $windupWalkIdx
     windup_walk_moves      = $windupWalkMoves
+    carry_jump_allowed     = $carryJumpAllowed
+    carry_jump_anim_idx    = $carryJumpIdx
+    air_throw_anim_idx     = if ($airThrow) { $airThrow.idx }    else { $null }
+    air_throw_anim_frames  = if ($airThrow) { $airThrow.frames } else { $null }
+    air_throw_y_rise       = $airThrowYRise
     bomb_stand_lift        = $standLift
     bomb_stand_supported   = $standSupported
     bomb_stand_xz_gap      = $standGap

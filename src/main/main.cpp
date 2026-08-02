@@ -772,7 +772,29 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 if (op == 3340) arena_oracle_phase("jumpon");
             }
             /* 3346-3600: land on the bomb, stand until the blast. */
-            if (op == 3600) arena_oracle_phase("DONE");
+            /* CARRY-JUMP + MIDAIR RELEASE (round 11): hold B, jump, release B
+             * just past the apex. Answers three unmeasured questions at once:
+             * does vanilla even allow jumping while carrying (playerY rises
+             * with B held), which clip rides the carried ascent, and what the
+             * midair release does - clip AND any vertical impulse (the arena's
+             * round-10 throw pose mid-air "looks like it's pushing bomberman
+             * up"; release on the DESCENT so a real kick shows against a
+             * falling baseline). Jump at 3700 -> apex ~+40 polls (20f). */
+            /* Windows in POLLS (2:1 vs frames): B held 3680-3744 = 32 ticks,
+             * safely uncharged; the measured vanilla jump is airborne ~32f
+             * (rise ~16f), so A at 3700 puts the apex ~3732 and the release
+             * at 3744 = ~6f into the descent, ~10f before the landing. */
+            if (op >= 3680 && op < 3744) {
+                *buttons |= 0x4000;                       /* CONT_B: carry */
+                if (op == 3680) arena_oracle_phase("carryjump");
+            }
+            if (op >= 3700 && op < 3706) {
+                *buttons |= 0x8000;                       /* CONT_A: jump */
+                if (op == 3700) arena_oracle_phase("jumpB");
+            }
+            if (op == 3744) arena_oracle_phase("relairB"); /* B off, descending */
+            /* 3744-3980: observe - the released bomb + the landing. */
+            if (op == 4000) arena_oracle_phase("DONE");
         }
         return ok;
     }
@@ -893,8 +915,14 @@ static bool soak_get_n64_input(int controller_num, uint16_t* buttons, float* x, 
                 if (cp >= 250 && cp < 450) *buttons |= 0x4000;   /* CONT_B: carry */
                 if (cp >= 280 && cp < 400) *y = -1.0f;           /* ...and walk  */
                 /* release at 450 = forward throw, lands well away */
-                if (cp >= 520 && cp < 532) *buttons |= 0x0010;   /* CONT_R: set  */
-                if (cp >= 570 && cp < 576) *buttons |= 0x8000;   /* CONT_A: jump */
+                /* round 11: CARRY-JUMP + MIDAIR RELEASE (uncharged, 32t hold;
+                 * jump 10t in; sim arc ~32t puts the apex ~cp552, so the B-up
+                 * at 564 releases ~6t into the descent - the [pstand]/[anim]
+                 * channels then show any Y kick and which clip plays). */
+                if (cp >= 500 && cp < 564) *buttons |= 0x4000;   /* CONT_B: carry */
+                if (cp >= 520 && cp < 526) *buttons |= 0x8000;   /* CONT_A: jump */
+                if (cp >= 640 && cp < 652) *buttons |= 0x0010;   /* CONT_R: set  */
+                if (cp >= 690 && cp < 696) *buttons |= 0x8000;   /* CONT_A: jump */
                 /* stand on the bomb until its fuse (~150 ticks after the set)
                  * blows; [pstand] carries the landing plateau by then */
             }
