@@ -1,0 +1,6 @@
+{
+  "windupwalk": "non-comparable as scripted: battle window is not prefix-shaped (Task-1 re-choreography) and vanilla opens with a 4-frame transition clip 27 before 28",
+  "setR2": "genuine arena divergence: arena stands with clip 41 where vanilla idles with 0 after the set (backlog: next feel round)",
+  "jumpon": "genuine arena divergence: arena jump ascent clip held ~4t vs vanilla ~34t; post-set timing also differs by design (fuse 150 vs 106)",
+  "relairB": "genuine arena divergence: arena missing vanilla's post-toss sequence [30,10]+[8,6] after the air throw (backlog: next feel round)"
+}

@@ -196,5 +196,49 @@ $atOK = ($atFrames.Count -ge 2) -and
 Check "midair release plays the air toss" $atOK `
       "golden idx=$($g.air_throw_anim_idx) x$($g.air_throw_anim_frames), first run $($atFrames.Count) frames"
 
+# --- check 17: full anim-timeline diff (oracle 2.0) ---------------------------
+# Every shared verb's ENTIRE animation timeline must match vanilla's within
+# +/-3 frames per run - the blanket net the sixteen bespoke checks are not: any
+# wrong clip, duration or transition in a covered verb goes red here. Mode 13 is
+# the LAST boot above, so arena_bridge.log still holds its log.
+#
+# The verbs vanilla and the arena genuinely disagree on live in
+# tools\oracle\known-divergences.json, one line of reason each. The register is
+# read BOTH ways: an unregistered FAIL fails the gate (a new divergence), and a
+# registered verb that PASSES also fails it, asking for the entry to be removed.
+# Without that second direction the register would rot into a permanent mute -
+# the vacuous green this whole instrument exists to prevent.
+$adScript = Join-Path $root "tools\anim-diff.ps1"
+$kdPath   = Join-Path $root "tools\oracle\known-divergences.json"
+# $ErrorActionPreference is Stop for this script; 2>&1 on a child process turns
+# its stderr into error records, which would throw instead of being reported.
+$prevEA = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$adOut  = & powershell -ExecutionPolicy Bypass -File $adScript -ArenaLog $log 2>&1
+$adExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEA
+$adOut | Out-Host
+if (-not (Test-Path $kdPath)) {
+    Check "anim timelines match vanilla" $false "no known-divergence register at $kdPath"
+} else {
+    $kd      = Get-Content $kdPath -Raw | ConvertFrom-Json
+    $kdNames = @($kd.PSObject.Properties.Name)
+    $adPass  = @($adOut | Select-String '^\[anim-diff\] (\S+) +PASS' | ForEach-Object { $_.Matches[0].Groups[1].Value })
+    $adFail  = @($adOut | Select-String '^\[anim-diff\] (\S+) +FAIL' | ForEach-Object { $_.Matches[0].Groups[1].Value })
+    $adKnown   = @($adFail | Where-Object { $kdNames -contains $_ })
+    $adUnknown = @($adFail | Where-Object { $kdNames -notcontains $_ })
+    $adStale   = @($adPass | Where-Object { $kdNames -contains $_ })
+    $adAbsent  = @($kdNames | Where-Object { ($adPass -notcontains $_) -and ($adFail -notcontains $_) })
+    foreach ($v in $adKnown) { Write-Host ("[oracle-gate] KNOWN-DIVERGENT {0}: {1}" -f $v, $kd.$v) }
+    $why = @()
+    if ($adUnknown.Count) { $why += "UNREGISTERED anim-diff FAIL: $($adUnknown -join ', ')" }
+    if ($adStale.Count)   { $why += "stale exception - $($adStale -join ', ') now PASSES; REMOVE the entry from known-divergences.json" }
+    if ($adAbsent.Count)  { $why += "registered verb never compared (marker missing?): $($adAbsent -join ', ')" }
+    if ($adPass.Count -lt 1) { $why += "no verb passed at all" }
+    if ($adExit -ne $adKnown.Count) { $why += "differ exit $adExit != $($adKnown.Count) registered failures" }
+    Check "anim timelines match vanilla" ($why.Count -eq 0) `
+          $(if ($why.Count) { $why -join '; ' }
+            else { "$($adPass.Count) passed, $($adKnown.Count) known-divergent, 0 unexpected" })
+}
+
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0
