@@ -71,19 +71,33 @@ function Truncate($runs, [int]$budget) {
 # verb order), the arena's is the stream tick before the marker. A leading run
 # that is NOT the carried clip is real content and stays.
 #
-# LENGTH CAP: residue is short. Measured over every legitimate drop on the
-# mode-13 probe the maximum is 5 ticks (the arena's stick -> locomotion-clip
-# latency on carrywalk/windupwalk; the vanilla side's is 2-3). Without a cap the
-# rule deletes real content the moment a verb's own clip happens to equal the
-# previous one's - e.g. a kickrun marker would silently drop vanilla's [3,16],
-# sixteen frames of run-up. The cap is the measured maximum with NO headroom: a
-# longer residue should fail loudly, not quietly disappear.
-$CARRY_MAX = 5
-function DropCarried($runs, $carried) {
+# LENGTH CAP, PER SIDE: residue is short, and the two sides' latencies differ.
+# Measured maxima over every legitimate drop on the mode-13 probe: vanilla 3
+# (the game's input -> anim latency), arena 5 (the stick -> locomotion-clip
+# latency on carrywalk/windupwalk). Without a cap the rule deletes real content
+# the moment a verb's own clip equals the previous one's - a kickrun marker
+# would drop vanilla's [3,16], sixteen frames of run-up, and stand's [3,6]
+# clears a SHARED cap of 5 by one frame, which is coincidence, not margin. Both
+# danger cases are vanilla-side, which is why that side is capped tighter. Each
+# cap is its own side's measured maximum with NO headroom: a longer residue is
+# kept and named (see OverCap), never quietly deleted.
+$CARRY_MAX_VANILLA = 3
+$CARRY_MAX_ARENA   = 5
+function DropCarried($runs, $carried, [int]$cap) {
     if ($null -ne $carried -and $runs.Count -gt 0 -and [int]$runs[0][0] -eq [int]$carried -and
-        [int]$runs[0][1] -le $CARRY_MAX) {
+        [int]$runs[0][1] -le $cap) {
         ,@($runs | Select-Object -Skip 1)
     } else { ,$runs }
+}
+# A leading run matching the carried clip but LONGER than its side's cap is kept
+# on purpose (it may be real content). That asymmetry is a common cause of the
+# run-count mismatch below, and "run count vanilla=2 arena=1" invites exactly
+# the wrong fix - bumping the cap - so name what actually happened instead.
+function OverCap($runs, $carried, [int]$cap, [string]$side) {
+    if ($null -ne $carried -and $runs.Count -gt 0 -and [int]$runs[0][0] -eq [int]$carried -and
+        [int]$runs[0][1] -gt $cap) {
+        "carried run ($side idx $([int]$runs[0][0]), $([int]$runs[0][1]) frames) exceeds the $side cap $cap - latency regression or real content, not a cap to bump"
+    } else { $null }
 }
 function RunSum($runs) { $s = 0; foreach ($r in $runs) { $s += [int]$r[1] }; $s }
 function ObservedTicks([int]$t0, [int]$t1) {
@@ -129,12 +143,12 @@ foreach ($vp in $tl.PSObject.Properties) {
     $t1 = if ($next) { $next[0].t } else { [math]::Min($t0 + [int]$vp.Value.frames, $lastTick + 1) }
     $aAll = ArenaRuns $t0 $t1
     $aCarried = if ($stream.ContainsKey($t0 - 1)) { $stream[$t0 - 1] } else { $null }
-    # If the vanilla carried clip is unknown (the first window in the file has
-    # no predecessor) the arena must not drop either - a one-sided drop is the
-    # exact asymmetry this rule exists to remove.
-    if ($null -eq $vCarried) { $aCarried = $null }
-    $vKeep = DropCarried $vAll $vCarried
-    $aKeep = DropCarried $aAll $aCarried
+    # If EITHER side's carried clip is unknown - vanilla's first window has no
+    # predecessor, and the arena stream can begin exactly on a marker - neither
+    # side may drop. A one-sided drop is the exact asymmetry this rule removes.
+    if ($null -eq $vCarried -or $null -eq $aCarried) { $vCarried = $null; $aCarried = $null }
+    $vKeep = DropCarried $vAll $vCarried $CARRY_MAX_VANILLA
+    $aKeep = DropCarried $aAll $aCarried $CARRY_MAX_ARENA
     # compare as much of the two streams as BOTH actually carry
     $window = [math]::Min((RunSum $vKeep), (RunSum $aKeep))
     $vRuns = Truncate $vKeep $window
@@ -164,6 +178,14 @@ foreach ($vp in $tl.PSObject.Properties) {
                 break
             }
         }
+    }
+    if ($bad) {
+        # lead with the cap story when one is in play - otherwise the run-count
+        # line reads like a tolerance problem and the cap gets bumped.
+        $over = @()
+        $o = OverCap $vAll $vCarried $CARRY_MAX_VANILLA 'vanilla'; if ($o) { $over += $o }
+        $o = OverCap $aAll $aCarried $CARRY_MAX_ARENA   'arena';   if ($o) { $over += $o }
+        if ($over.Count -gt 0) { $bad = ($over -join '; ') + "; $bad" }
     }
     if ($bad) { Write-Host ("[anim-diff] {0,-12} FAIL  {1}" -f $name, $bad); $fails++ }
     else      { Write-Host ("[anim-diff] {0,-12} PASS  {1} runs over {2}f" -f $name, $vRuns.Count, $window)
