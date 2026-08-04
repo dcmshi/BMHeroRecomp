@@ -120,6 +120,7 @@ DECLARE_FUNC(s32,  arena_export_latched_buttons);
  * the last non-push state. Native owns the memory; the patch stays stateless. */
 DECLARE_FUNC(s32,  arena_export_contain_state, s32 cur);
 DECLARE_FUNC(s32,  arena_export_contain_vely, s32 velybits, s32 correcting);
+DECLARE_FUNC(s32,  arena_export_push_entry_on);  /* task #29: ARENA_PUSH_ENTRY=1 = vanilla push entry in battle */
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -258,6 +259,32 @@ RECOMP_PATCH void func_8001C0EC(s32 objId, s32 part, s32 animIdx, s32 fileID, u3
             return;                 /* walker steal dropped; the clip keeps playing */
     }
     func_8001BE6C(objId, part, animIdx, (s32)&gFileArray[fileID].ptr[animTable[animIdx]]);
+}
+
+/* ---- BATTLE: the walker's push ENTRY is suppressed (task #29, 2026-08-04) -
+ * func_802843CC is what the player overlay's solid-object scan runs on
+ * bomb-actor overlap: actionState = 42 (PUSH) + a clip-41 trigger, EVERY
+ * frame while the overlap holds. The 42-containment below restores the state
+ * and Vel.y, but an anim trigger cannot be un-rung — once no pose window is
+ * open the body idles pinned on 41 (the setR2 timeline divergence; [animw]
+ * showed 41 at frame=2 for 15f after every set, and a landing's idle-0
+ * surviving exactly one frame). In battle ALL collision response belongs to
+ * the sim (position is sim-driven; player↔bomb pushout is sim work, #24), so
+ * the ENTRY is skipped — keyed on the mechanism, not the clip number (the
+ * 8.34 lesson). Campaign/oracle path reproduces the original byte-for-byte
+ * (funcs_51.c:6391: state, trigger, anim-config helper). ARENA_PUSH_ENTRY=1
+ * restores the vanilla entry in battle for a one-binary A/B (8.18 rule). The
+ * 42-containment stays as the second layer; with the entry gated it should
+ * never fire. The overlay SCAN itself (this function's caller) is still
+ * un-decompiled — that RE item remains open; this gates its only
+ * player-visible effect. */
+extern void func_80280000_code_extra_0(s32 mode);
+RECOMP_PATCH void func_802843CC_code_extra_0(void) {
+    if (arena_bridge_is_battle() && !arena_export_push_entry_on())
+        return;
+    gPlayerObject->actionState = 0x2A;
+    func_8001C0EC(0, 0, 0x29, 1, (u32*)D_80115808);
+    func_80280000_code_extra_0(0);
 }
 
 /* Bit-cast a float into an int arg for the export ABI. */

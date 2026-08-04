@@ -111,6 +111,7 @@ void  arena_latch_buttons(int held);
 int   arena_latched_buttons(void);
 int   arena_contain_player_state(int cur);  /* walker PUSH(42) -> last non-push state */
 int   arena_contain_player_vely(int velybits, int correcting); /* + last non-push Vel.y */
+int   arena_push_entry_on(void);  /* 1 iff ARENA_PUSH_ENTRY=1: vanilla push entry in battle (A/B) */
 /* Single-player oracle (spec 2026-08-01): ARENA_ORACLE=1 boots VANILLA
  * campaign with per-frame probes; goldens are extracted from the log.
  * Native owns all gating/throttling and the shared frame counter n; the

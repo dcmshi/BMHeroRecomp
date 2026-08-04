@@ -260,6 +260,10 @@ extern "C" void arena_export_contain_vely(uint8_t* rdram, recomp_context* ctx) {
     _return(ctx, arena_contain_player_vely(_arg<0, int>(rdram, ctx),
                                            _arg<1, int>(rdram, ctx)));
 }
+/* Task #29: ARENA_PUSH_ENTRY=1 restores the vanilla push entry in battle. */
+extern "C" void arena_export_push_entry_on(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_push_entry_on());
+}
 
 /* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {

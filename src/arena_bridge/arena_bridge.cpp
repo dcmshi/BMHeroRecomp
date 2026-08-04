@@ -98,6 +98,16 @@ namespace {
     int  g_air_pose_idx  = -1;
     int g_pose_frames = 0;
 
+    /* Task #29: a GROUNDED SET pose window is open. R is stripped from the
+     * game's input, so the walker never sees a set and has no set->idle
+     * transition of its own - when the window expires while standing, the
+     * bridge hands the body back to the idle clip or the set clip just LOOPS
+     * (it wraps 18->0; measured 25 straight frames of clip 31 post-fix,
+     * 2026-08-04). The walker-visible verbs (A jump, B carry/throw) end
+     * themselves - their release IS a walker state transition - which is why
+     * carryrel never needed this. */
+    bool g_set_pose_open = false;
+
 /* Window length in frames. Default 10 = clip 29's exact length (measured
  * 2026-07-30: the frame counter wraps 18 -> 0 at +2/frame), so the game's own
  * drop clip plays EXACTLY ONCE - the real game's drop is one snappy play-
@@ -111,6 +121,18 @@ static int arena_pose_frames(void) {
         return 10;
     }();
     return n;
+}
+
+/* IDLE clip (task #29): the post-set handback target. Vanilla idles on 0
+ * after every measured verb (timelines.json: setR2 [31,10][0,8]); 0 is the
+ * locomotion map's idle. ARENA_IDLE_ANIM overrides for A/B. */
+static int arena_idle_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_IDLE_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 0;
+    }();
+    return idx;
 }
 
 /* KICK window length, separate from the set window: the oracle measured the
@@ -373,6 +395,22 @@ extern "C" int arena_contain_player_vely(int velybits, int correcting) {
     return velybits;
 }
 
+/* Task #29 (2026-08-04): the push ENTRY the containment fights is
+ * func_802843CC_code_extra_0 - actionState=42 plus a clip-41 trigger, re-run
+ * EVERY frame the overlay's solid-object scan sees a bomb actor. The
+ * containment restores the state but the anim write is not containable
+ * after the fact (the trigger already reset the clip), so the body idles on
+ * 41 whenever no pose window is open ([animw] evidence: 41 pinned at
+ * frame=2 for 15f after every set). In battle the patch suppresses the
+ * entry outright - collision response is the sim's. ARENA_PUSH_ENTRY=1
+ * restores the vanilla entry in battle for a one-binary A/B (8.18 rule). */
+extern "C" int arena_push_entry_on(void) {
+    static const bool on = []() {
+        const char* v = std::getenv("ARENA_PUSH_ENTRY");
+        return v && v[0] == '1'; }();
+    return on ? 1 : 0;
+}
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
@@ -407,6 +445,28 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         if (g_pose_anim == g_air_pose_idx
             && g_state.players[0].pos.y > 0 && arena_jump_anim_index() >= 0) {
             g_pose_anim   = arena_jump_anim_index();
+            g_pose_frames = 2;
+        }
+    }
+
+    /* SET tail (task #29): the grounded-set twin of the airset tail above.
+     * R never reaches the walker, so no walker transition ends the set - the
+     * clip loops (18->0 wrap) until something else takes the body. Hand back
+     * to idle (vanilla setR2: [31,10] then 0) with the same 2-frame single
+     * trigger. Guards mirror the airset tail: only if the window still holds
+     * the set clip (a longer edge pose owns its own ending) and only while
+     * grounded AND standing - a set window that closes while the player has
+     * started moving is an unmeasured corner deliberately left to the
+     * walker's next locomotion transition. */
+    if (g_set_pose_open && g_pose_frames == 0) {
+        g_set_pose_open = false;
+        float hvx = qf(g_state.players[0].vel.x);
+        float hvz = qf(g_state.players[0].vel.z);
+        if (g_pose_anim == arena_set_anim_index()
+            && g_state.players[0].pos.y == 0
+            && (hvx * hvx + hvz * hvz) < 0.0025f   /* the set latch's own standing bar */
+            && arena_idle_anim_index() >= 0) {
+            g_pose_anim   = arena_idle_anim_index();
             g_pose_frames = 2;
         }
     }
@@ -533,6 +593,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                 if (standing || pose_moving) {
                     g_pose_anim   = arena_set_anim_index();
                     g_pose_frames = arena_pose_frames();
+                    g_set_pose_open = true;   /* task #29: the SET tail hands back to idle */
                 }
             }
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */

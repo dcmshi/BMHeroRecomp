@@ -123,6 +123,7 @@ extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx);   /
 extern "C" void arena_export_latched_buttons(uint8_t* rdram, recomp_context* ctx); // battle button ownership
 extern "C" void arena_export_contain_state(uint8_t* rdram, recomp_context* ctx);   // walker push containment
 extern "C" void arena_export_contain_vely(uint8_t* rdram, recomp_context* ctx);    //  + vertical velocity restore
+extern "C" void arena_export_push_entry_on(uint8_t* rdram, recomp_context* ctx);   // task #29: A/B the push entry
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx);   // single-player oracle
 extern "C" void arena_export_oracle_frame(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_oracle_anim(uint8_t* rdram, recomp_context* ctx);
@@ -1190,6 +1191,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_latched_buttons);
     REGISTER_FUNC(arena_export_contain_state);
     REGISTER_FUNC(arena_export_contain_vely);
+    REGISTER_FUNC(arena_export_push_entry_on);
     REGISTER_FUNC(arena_export_oracle_mode);
     REGISTER_FUNC(arena_export_oracle_frame);
     REGISTER_FUNC(arena_export_oracle_anim);
