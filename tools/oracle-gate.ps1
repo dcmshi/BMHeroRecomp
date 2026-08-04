@@ -211,12 +211,35 @@ Check "midair release plays the air toss" $atOK `
 #
 # COVERAGE FLOOR: the differ skips a verb whose [verb] marker never fired, so
 # without a count assertion six of the ten shared verbs could quietly leave the
-# comparison and this check would still print PASS. 10 is today's intersection
-# of kOracleScript and kBattleScript; >= so adding a shared verb never breaks
-# the gate, while losing one does. It also catches the wrong log being parsed
-# (this check reads arena_bridge.log, which only holds the mode-13 boot because
-# mode 13 is the LAST RunSoak above - move it and the count collapses).
-$AD_MIN_VERBS = 10
+# comparison and this check would still print PASS. The floor is DERIVED from
+# the verb tables themselves (task #33) - the hand-kept constant it replaces
+# decayed by construction: a verb added past it was silently un-floored. The
+# intersection of kOracleScript and kBattleScript names IS the compared set
+# (battle-only and oracle-only names never meet in the differ), so parsing the
+# header keeps the floor honest without a rebuild. Fails closed: an unparseable
+# header yields 0 shared verbs, which no differ run can satisfy... except by
+# comparing 0 - hence the explicit parse check below. The floor also catches
+# the wrong log being parsed (this check reads arena_bridge.log, which only
+# holds the mode-13 boot because mode 13 is the LAST RunSoak above).
+$vsPath = Join-Path $root "src\main\verb_script.h"
+function Get-VerbNames([string]$src, [string]$table) {
+    $m = [regex]::Match($src, "$table\[\]\s*=\s*\{(.*?)\n\};", 'Singleline')
+    if (-not $m.Success) { return @() }
+    @([regex]::Matches($m.Groups[1].Value, '\{\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+}
+$vsSrc = if (Test-Path $vsPath) { Get-Content $vsPath -Raw } else { "" }
+$vsOracle = Get-VerbNames $vsSrc 'kOracleScript'
+$vsBattle = Get-VerbNames $vsSrc 'kBattleScript'
+$AD_MIN_VERBS = @($vsOracle | Where-Object { $vsBattle -contains $_ }).Count
+
+# DEPTH FLOOR (task #32): the verb count floors breadth but not depth - a
+# battle window shortened enough truncates a verb to a passing PREFIX and the
+# verb count never moves. The differ already prints its passing-run subtotal;
+# assert it. Update the constant from the differ's own "(N in passing verbs)"
+# line whenever a verb is added or a registered divergence is fixed - the gate
+# goes red in that direction too (a RISE above the floor is fine, >=), so the
+# constant cannot silently overstate coverage, only understate it.
+$AD_MIN_PASS_RUNS = 18
 $adScript = Join-Path $root "tools\anim-diff.ps1"
 $kdPath   = Join-Path $root "tools\oracle\known-divergences.json"
 # $ErrorActionPreference is Stop for this script; 2>&1 on a child process turns
@@ -238,6 +261,8 @@ if (-not (Test-Path $kdPath)) {
     $adFail  = @($adOut | Select-String '^\[anim-diff\] (\S+) +FAIL' | ForEach-Object { $_.Matches[0].Groups[1].Value })
     $adSum   = $adOut | Select-String '^\[anim-diff\] (\d+) verbs compared' | Select-Object -First 1
     $adCount = if ($adSum) { [int]$adSum.Matches[0].Groups[1].Value } else { -1 }
+    $adRuns     = $adOut | Select-String '\((\d+) in passing verbs\)' | Select-Object -First 1
+    $adPassRuns = if ($adRuns) { [int]$adRuns.Matches[0].Groups[1].Value } else { -1 }
     $adKnown   = @($adFail | Where-Object { $kdNames -contains $_ })
     $adUnknown = @($adFail | Where-Object { $kdNames -notcontains $_ })
     $adStale   = @($adPass | Where-Object { $kdNames -contains $_ })
@@ -248,7 +273,9 @@ if (-not (Test-Path $kdPath)) {
     if ($adStale.Count)   { $why += "stale exception - $($adStale -join ', ') now PASSES; REMOVE the entry from known-divergences.json" }
     if ($adAbsent.Count)  { $why += "registered verb never compared (marker missing?): $($adAbsent -join ', ')" }
     if ($adPass.Count -lt 1) { $why += "no verb passed at all" }
+    if ($AD_MIN_VERBS -lt 1) { $why += "derived 0 shared verbs from verb_script.h - the header parse is broken, fix Get-VerbNames" }
     if ($adCount -lt $AD_MIN_VERBS) { $why += "only $adCount verbs compared, want >= $AD_MIN_VERBS (marker stopped firing, or the wrong log)" }
+    if ($adPassRuns -lt $AD_MIN_PASS_RUNS) { $why += "passing verbs cover only $adPassRuns runs, want >= $AD_MIN_PASS_RUNS (a shortened window can pass on a prefix)" }
     if ($adCount -ne ($adPass.Count + $adFail.Count)) { $why += "differ says $adCount verbs, $($adPass.Count + $adFail.Count) PASS/FAIL lines parsed" }
     if ($adExit -ne $adKnown.Count) { $why += "differ exit $adExit != $($adKnown.Count) registered failures" }
     Check "anim timelines match vanilla" ($why.Count -eq 0) `
