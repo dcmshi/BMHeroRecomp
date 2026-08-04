@@ -83,7 +83,15 @@ static const VerbRow kBattleScript[] = {
     { "jumpB",     395,   3, VERB_A,  0 },
     { "relairB",   417,   0, 0,       0 },
     { "setR2",     455,   2, VERB_R,  0 },
-    { "jumpon",    480,   3, VERB_A,  0 },   /* battle-only: fuse differs */
+    { "jumpon",    480,   3, VERB_A,  0 },
+    /* Battle-only window CLOSER (task #30): jumpon's jump+landing+idle are
+     * comparable against vanilla, but the mode-13 fuse (150 vs 106) pushes
+     * the hit reaction ~44t later BY DESIGN - no clip work can reconcile
+     * that run. This marker ends jumpon's compared window after the landing
+     * settles and before either side's blast; the hit clip stays covered by
+     * the bespoke [hitpose] check. 535 = jumpon + arc (~32t) + squat (6) +
+     * an idle tail with margin. */
+    { "postjump",  535,   0, 0,       0 },
 };
 
 /* poll is 1-based and runs at 2x tick rate. Named rows mark once, on their

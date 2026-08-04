@@ -98,15 +98,27 @@ namespace {
     int  g_air_pose_idx  = -1;
     int g_pose_frames = 0;
 
-    /* Task #29: a GROUNDED SET pose window is open. R is stripped from the
+    /* Task #29 (generalized by #30): a grounded pose window that needs an
+     * idle handback is open, holding this clip. R is stripped from the
      * game's input, so the walker never sees a set and has no set->idle
      * transition of its own - when the window expires while standing, the
      * bridge hands the body back to the idle clip or the set clip just LOOPS
      * (it wraps 18->0; measured 25 straight frames of clip 31 post-fix,
-     * 2026-08-04). The walker-visible verbs (A jump, B carry/throw) end
-     * themselves - their release IS a walker state transition - which is why
-     * carryrel never needed this. */
-    bool g_set_pose_open = false;
+     * 2026-08-04). Same for the jump driver's landing squat - the walker
+     * never jumped, so nothing ends its landing either. The walker-visible
+     * verbs (B carry/throw) end themselves - their release IS a walker state
+     * transition - which is why carryrel never needed this. -1 = no tail. */
+    int g_ground_tail_idx = -1;
+
+    /* Task #30: pending [verb] names (poll side enqueues via arena_verb_mark,
+     * tick_input flushes with the consumption tick - see the comment on
+     * arena_verb_mark below). */
+    const char* g_verb_pend[4];
+    int         g_verb_pend_n = 0;
+
+    /* Task #30: the JUMP pose driver was driving this airborne stretch -
+     * cleared at the landing edge, which then latches the landing squat. */
+    bool g_jump_driver_air = false;
 
     /* Task #31: the midair-toss RECOVERY CHAIN. Vanilla's relairB timeline is
      * fixed-length clip choreography - toss 21x3, recovery 30x10, landing
@@ -252,6 +264,25 @@ static int arena_jump_anim_index(void) {
         return 6;
     }();
     return idx;
+}
+/* Task #30: the descent clip. Vanilla's jumpon timeline is [6,19][7,15] -
+ * clip 6 press-to-apex, clip 7 apex-to-touchdown; the jump driver switches
+ * on the sim's vel.y sign. ARENA_FALL_ANIM overrides; ARENA_JUMP_DRIVER=0
+ * disables the whole driver for a one-binary A/B. */
+static int arena_fall_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_FALL_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 7;
+    }();
+    return idx;
+}
+static int arena_jump_driver_on(void) {
+    static const int on = []() {
+        const char* v = std::getenv("ARENA_JUMP_DRIVER");
+        return (v && v[0] == '0') ? 0 : 1;
+    }();
+    return on;
 }
 /* THROW clip (round 10): driven on the HELD->AIRBORNE edge. The walker's own
  * throw trigger is a ONE-SHOT that can land on the carry window's closing
@@ -462,6 +493,28 @@ extern "C" int arena_push_entry_on(void) {
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
+    /* [btn] (task #30): the sim-side button mask (b0 jump, b1 bomb, b2 set),
+     * logged on CHANGE with the consumption tick. The jumpon liftoff appears
+     * ~7t after the [verb] marker while jumpB's appears 1t after - this
+     * channel says whether that is pipeline latency (bit arrives late) or a
+     * marker-stamp artifact (bit arrives on time, the marker's tick read is
+     * skewed). Bounded: the mask changes a few dozen times per script. */
+    {
+        static int prev_btn = -1;
+        if (buttons != prev_btn) {
+            if (g_log) { std::fprintf(g_log, "[btn] m=%d t%u\n",
+                                      buttons, g_state.tick); std::fflush(g_log); }
+            prev_btn = buttons;
+        }
+    }
+    /* Flush pending [verb] markers stamped with the CONSUMPTION tick (task
+     * #30) - windows sliced here always align with the [animrun] stream,
+     * even on a boot where poll delivery runs ticks behind injection. */
+    for (int vi = 0; vi < g_verb_pend_n; vi++) {
+        if (g_log) { std::fprintf(g_log, "[verb] %s t%u\n",
+                                  g_verb_pend[vi], g_state.tick); std::fflush(g_log); }
+    }
+    g_verb_pend_n = 0;
     Vec3q before = g_state.players[0].pos;
     /* Neutral is arena_input_pack(0,...) = 0x820, NOT raw 0 (raw 0 decodes to a
      * full -32,-32 stick). Idle players 1-3 must get real neutral or they run. */
@@ -532,20 +585,23 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         }
     }
 
-    /* SET tail (task #29): the grounded-set twin of the airset tail above.
-     * R never reaches the walker, so no walker transition ends the set - the
-     * clip loops (18->0 wrap) until something else takes the body. Hand back
-     * to idle (vanilla setR2: [31,10] then 0) with the same 2-frame single
-     * trigger. Guards mirror the airset tail: only if the window still holds
-     * the set clip (a longer edge pose owns its own ending) and only while
-     * grounded AND standing - a set window that closes while the player has
+    /* GROUND tail (task #29, generalized by #30): the grounded twin of the
+     * airset tail above, for poses the walker cannot end because it never
+     * saw the verb - the set clip (R is stripped; it loops on a 18->0 wrap
+     * otherwise) and the jump driver's landing squat (the walker never
+     * jumped). Hand back to idle (vanilla shows 0 after both: setR2
+     * [31,10][0,8], jumpon [8,6][...]) with the same 2-frame single trigger.
+     * Guards mirror the airset tail: only if the window still holds the
+     * expected clip (a longer edge pose owns its own ending) and only while
+     * grounded AND standing - a window that closes while the player has
      * started moving is an unmeasured corner deliberately left to the
      * walker's next locomotion transition. */
-    if (g_set_pose_open && g_pose_frames == 0) {
-        g_set_pose_open = false;
+    if (g_ground_tail_idx >= 0 && g_pose_frames == 0) {
+        int expect = g_ground_tail_idx;
+        g_ground_tail_idx = -1;
         float hvx = qf(g_state.players[0].vel.x);
         float hvz = qf(g_state.players[0].vel.z);
-        if (g_pose_anim == arena_set_anim_index()
+        if (g_pose_anim == expect
             && g_state.players[0].pos.y == 0
             && (hvx * hvx + hvz * hvz) < 0.0025f   /* the set latch's own standing bar */
             && arena_idle_anim_index() >= 0) {
@@ -597,6 +653,47 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                                   * next frame's walker gate still drops the
                                   * broken 41 re-trigger; closes 1 frame after
                                   * release so the walker's own throw clip lands */
+        }
+    }
+
+    /* JUMP pose driver (task #30). The visible arc flies the sim's Y, but the
+     * clips rode the walker's own mini-hop - a 4-tick clip 6 in some boots,
+     * NOTHING in boots where the walker sat in state 15 (its A response is
+     * the flaky part; the sim jump is tick-exact, [btn] evidence 2026-08-04).
+     * Same architecture as the carry driver: rolling 2-frame window keyed on
+     * the SIM's jump state - clip 6 press-to-apex, 7 apex-to-touchdown
+     * (vanilla jumpon [6,19][7,15]) - yielding to any edge pose with a longer
+     * budget and to the toss chain/carried jumps, which own their own clips. */
+    {
+        bool jumping = g_state.players[0].state == PSTATE_JUMP;
+        if (jumping
+            && !g_state.players[0].held_bomb
+            && g_toss_chain_stage == 0
+            && g_pose_frames <= 2
+            && arena_jump_driver_on()) {
+            int want = (g_state.players[0].vel.y > 0) ? arena_jump_anim_index()
+                                                      : arena_fall_anim_index();
+            if (want >= 0) {
+                g_pose_anim   = want;
+                g_pose_frames = 2;
+                g_jump_driver_air = true;
+            }
+        }
+        /* LANDING squat (vanilla [8,6], the same clip the toss chain lands
+         * on): latched once on the driver's jump-end edge, grounded only (a
+         * midair TUMBLE also ends PSTATE_JUMP - the hit pose owns that), and
+         * only if no longer-budget pose is in flight. The ground tail below
+         * hands it back to idle. */
+        if (g_jump_driver_air && !jumping) {
+            g_jump_driver_air = false;
+            if (g_state.players[0].pos.y == 0
+                && g_state.players[0].state != PSTATE_TUMBLE
+                && g_state.players[0].state != PSTATE_DEAD
+                && g_pose_frames <= 2 && arena_land_anim_index() >= 0) {
+                g_pose_anim       = arena_land_anim_index();
+                g_pose_frames     = arena_land_pose_frames();
+                g_ground_tail_idx = arena_land_anim_index();
+            }
         }
     }
 
@@ -680,7 +777,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                 if (standing || pose_moving) {
                     g_pose_anim   = arena_set_anim_index();
                     g_pose_frames = arena_pose_frames();
-                    g_set_pose_open = true;   /* task #29: the SET tail hands back to idle */
+                    g_ground_tail_idx = arena_set_anim_index();  /* task #29: idle handback */
                 }
             }
             if (o == 0 && g_log) {   /* [setdbg]: diagnose set-bomb placement + render slot */
@@ -1245,15 +1342,20 @@ extern "C" void arena_oracle_phase(const char* name) {
                  std::fflush(g_log); }
 }
 
-/* Battle verb marker (oracle 2.0): the mode-13 script logs its named verbs
- * so anim-diff can align arena timelines with the vanilla ones. Stamped with
- * the SIM tick - [animrun] uses the same clock. */
+/* Battle verb marker (oracle 2.0; delivery-anchored 2026-08-04, task #30):
+ * the mode-13 script logs its named verbs so anim-diff can align arena
+ * timelines with the vanilla ones. The poll-side call ENQUEUES the name;
+ * tick_input flushes it stamped with the CONSUMPTION tick - the same clock
+ * and the same pipeline stage as [animrun] and [btn]. Stamping at the poll
+ * looked identical on most boots, but one boot in ~six delivers polls ~7
+ * ticks late ([verb] setR2 t519 vs [setdbg] t527, 2026-08-04) and a marker
+ * stamped at injection then slices the window 7 ticks early against the
+ * stream - every boundary guard reads that as leading residue over the cap.
+ * Names are table literals (static lifetime); the queue depth covers rows
+ * that could open between two ticks. */
 extern "C" void arena_verb_mark(const char* name) {
     ensure_init();
-    if (g_log) {
-        std::fprintf(g_log, "[verb] %s t%u\n", name, g_state.tick);
-        std::fflush(g_log);
-    }
+    if (g_verb_pend_n < 4) g_verb_pend[g_verb_pend_n++] = name;
 }
 
 /* Heartbeat: in-level signal (mash-stop) + floor/player Y from the game's own
