@@ -1,5 +1,4 @@
 {
   "windupwalk": "non-comparable as scripted: battle window is not prefix-shaped (Task-1 re-choreography) and vanilla opens with a 4-frame transition clip 27 before 28",
-  "jumpon": "genuine arena divergence: arena jump ascent clip held ~4t vs vanilla ~34t; post-set timing also differs by design (fuse 150 vs 106)",
-  "relairB": "genuine arena divergence: arena missing vanilla's post-toss sequence [30,10]+[8,6] after the air throw (backlog: next feel round)"
+  "jumpon": "genuine arena divergence (#30): no jump clips ride the sim's arc - the walker mini-hops its own 4t clips in some boots and sits in state 15 playing nothing in others, and the sim's liftoff lags the A marker ~7t here vs 1t at jumpB (differ shows an undropable 7f lead idle); fuse 150 vs 106 also shifts the hit within the window by design"
 }

@@ -108,6 +108,18 @@ namespace {
      * carryrel never needed this. */
     bool g_set_pose_open = false;
 
+    /* Task #31: the midair-toss RECOVERY CHAIN. Vanilla's relairB timeline is
+     * fixed-length clip choreography - toss 21x3, recovery 30x10, landing
+     * squat 8x6, then idle - NOT touchdown-anchored (the one measured sample
+     * has the chain end coincide with touchdown; we reproduce the clip
+     * lengths and let the idle tail absorb arc-timing differences, which the
+     * differ's +-3 and window truncation tolerate). Stage: 0 off, 1 toss
+     * playing, 2 recovery, 3 landing squat. Advanced by the chain tail in
+     * tick_input; any longer edge pose (the hit clip) that steals the window
+     * kills the chain via the expected-clip guard, and ITS ending owns the
+     * body - same rule as the airset/set tails. */
+    int g_toss_chain_stage = 0;
+
 /* Window length in frames. Default 10 = clip 29's exact length (measured
  * 2026-07-30: the frame counter wraps 18 -> 0 at +2/frame), so the game's own
  * drop clip plays EXACTLY ONCE - the real game's drop is one snappy play-
@@ -306,6 +318,42 @@ static int arena_airthrow_pose_frames(void) {
     }();
     return n;
 }
+/* Task #31: the post-toss chain clips. Defaults are vanilla's relairB
+ * timeline runs [30,10] and [8,6] (timelines.json - clip 30 is information
+ * the scalar goldens never held; the timeline IS the golden here). -1 anim
+ * disables the stage (the chain skips to its end). */
+static int arena_airtoss_recover_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_AIRTOSS_RECOVER_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 30;
+    }();
+    return idx;
+}
+static int arena_airtoss_recover_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_AIRTOSS_RECOVER_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 10;
+    }();
+    return n;
+}
+static int arena_land_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_LAND_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 8;
+    }();
+    return idx;
+}
+static int arena_land_pose_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_LAND_POSE_FRAMES");
+        if (v) { int k = std::atoi(v); if (k > 0 && k <= 120) return k; }
+        return 6;
+    }();
+    return n;
+}
 
     float qf(int32_t q) { return (float)q / 4096.0f; }  /* Q20.12 -> float */
 
@@ -449,6 +497,41 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         }
     }
 
+    /* TOSS-CHAIN tail (task #31): advance the fixed-length recovery chain.
+     * Vanilla relairB is [21,3][30,10][8,6] then idle - pure clip lengths,
+     * reproduced here stage by stage. The expected-clip guard mirrors the
+     * other tails: a longer edge pose (the hit clip) that stole the window
+     * ends the chain and owns the body. A -1 knob skips to the chain end.
+     * At the end: midair -> the jump clip rides out the arc (vanilla's
+     * post-chain descent shows nothing else), grounded -> idle. */
+    if (g_toss_chain_stage > 0 && g_pose_frames == 0) {
+        int expected = (g_toss_chain_stage == 1) ? arena_airthrow_anim_index()
+                     : (g_toss_chain_stage == 2) ? arena_airtoss_recover_anim_index()
+                     :                             arena_land_anim_index();
+        if (g_pose_anim != expected) {
+            g_toss_chain_stage = 0;   /* stolen - the stealing pose's ending owns the handover */
+        } else if (g_toss_chain_stage == 1 && arena_airtoss_recover_anim_index() >= 0) {
+            g_pose_anim   = arena_airtoss_recover_anim_index();
+            g_pose_frames = arena_airtoss_recover_frames();
+            g_toss_chain_stage = 2;
+            if (g_log) { std::fprintf(g_log, "[tosschain] stage=2 idx=%d frames=%d t%u\n",
+                                      g_pose_anim, g_pose_frames, g_state.tick); std::fflush(g_log); }
+        } else if (g_toss_chain_stage == 2 && arena_land_anim_index() >= 0) {
+            g_pose_anim   = arena_land_anim_index();
+            g_pose_frames = arena_land_pose_frames();
+            g_toss_chain_stage = 3;
+            if (g_log) { std::fprintf(g_log, "[tosschain] stage=3 idx=%d frames=%d t%u\n",
+                                      g_pose_anim, g_pose_frames, g_state.tick); std::fflush(g_log); }
+        } else {
+            int idx = (g_state.players[0].pos.y > 0) ? arena_jump_anim_index()
+                                                     : arena_idle_anim_index();
+            if (idx >= 0) { g_pose_anim = idx; g_pose_frames = 2; }
+            g_toss_chain_stage = 0;
+            if (g_log) { std::fprintf(g_log, "[tosschain] end idx=%d t%u\n",
+                                      idx, g_state.tick); std::fflush(g_log); }
+        }
+    }
+
     /* SET tail (task #29): the grounded-set twin of the airset tail above.
      * R never reaches the walker, so no walker transition ends the set - the
      * clip loops (18->0 wrap) until something else takes the body. Hand back
@@ -545,7 +628,11 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
                 if (idx >= 0) {
                     g_pose_anim   = idx;
                     g_pose_frames = fr;
-                    if (air) { g_air_pose_open = true; g_air_pose_idx = idx; }
+                    /* task #31: the midair toss enters the recovery CHAIN
+                     * (21 -> 30 -> 8 -> idle/jump) instead of the plain
+                     * jump handback - vanilla plays a whole sequence here,
+                     * not just the arc clip. */
+                    if (air) g_toss_chain_stage = 1;
                 }
             }
             if (g_log) {
