@@ -294,12 +294,13 @@ if (-not (Test-Path $kdPath)) {
 # first delta is exactly one gravity step - airset_release_vy 0). The golden
 # fall_frames is NOT asserted: it is scenario-bound (vanilla released from a
 # different height); the LAW pins the arc, the duration follows from height.
-$fa = @($m12 | Select-String '\[fallarc\] t(\d+) bi=(\d+) y=([-\d.]+) py=([-\d.]+) attach=(\d+)' |
+$fa = @($m12 | Select-String '\[fallarc\] t(\d+) bi=(\d+) y=([-\d.]+) py=([-\d.]+) dxz=([-\d.]+) attach=(\d+)' |
        ForEach-Object { [pscustomobject]@{
-           t  = [int]$_.Matches[0].Groups[1].Value
-           bi = [int]$_.Matches[0].Groups[2].Value
-           y  = [double]$_.Matches[0].Groups[3].Value
-           py = [double]$_.Matches[0].Groups[4].Value } })
+           t   = [int]$_.Matches[0].Groups[1].Value
+           bi  = [int]$_.Matches[0].Groups[2].Value
+           y   = [double]$_.Matches[0].Groups[3].Value
+           py  = [double]$_.Matches[0].Groups[4].Value
+           dxz = [double]$_.Matches[0].Groups[5].Value } })
 if ($fa.Count -ge 8) {
     # first episode: contiguous ticks on one bomb index
     $ep = [System.Collections.Generic.List[object]]::new(); $ep.Add($fa[0])
@@ -322,9 +323,16 @@ if ($fa.Count -ge 8) {
         $vyOK   = [math]::Abs($v0   - $g.airset_release_vy)   -le 0.05
     }
     $attOK = ($att -eq $g.airset_attach_samples)
-    Check "airset fall arc == goldens" ($attOK -and $gravOK -and $vyOK) `
-          ("attach {0} rows (golden {1}); g={2} (golden {3}); v0={4} (golden {5}); {6} fall rows" -f `
-           $att, $g.airset_attach_samples, $gFit, $g.airset_fall_gravity, $v0, $g.airset_release_vy, $fd.Count)
+    # v21: the hands hold the bomb AHEAD too - the attach rows' XZ gap must be
+    # the golden hands-forward offset (Hero units = sim x120)
+    $dxzHero = @()
+    for ($i = 0; $i -lt $att; $i++) { $dxzHero += ($ep[$i].dxz * 120.0) }
+    $dxzOK = ($dxzHero.Count -gt 0) -and
+             (@($dxzHero | Where-Object { [math]::Abs($_ - $g.airset_attach_dxz) -gt 1.0 }).Count -eq 0)
+    $dxzMean = if ($dxzHero.Count) { [math]::Round(($dxzHero | Measure-Object -Average).Average, 1) } else { $null }
+    Check "airset fall arc == goldens" ($attOK -and $gravOK -and $vyOK -and $dxzOK) `
+          ("attach {0} rows (golden {1}) at dxz={2} (golden {3}); g={4} (golden {5}); v0={6} (golden {7}); {8} fall rows" -f `
+           $att, $g.airset_attach_samples, $dxzMean, $g.airset_attach_dxz, $gFit, $g.airset_fall_gravity, $v0, $g.airset_release_vy, $fd.Count)
 } else { Check "airset fall arc == goldens" $false "no [fallarc] episode in mode-12 log ($($fa.Count) lines)" }
 
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }

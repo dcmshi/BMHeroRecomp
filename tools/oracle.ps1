@@ -219,12 +219,13 @@ $player = $lines | Select-String '\[oracle-player\] n=(\d+) slot=\d+ state=(\d+)
 # nobody chose. The landing delta is a partial step (the floor clamp), so the
 # gravity fit excludes the last delta.
 $nBlastA2 = $blast | Where-Object { $_ -gt $nAirset } | Select-Object -First 1
-$airAttachSamples = $null; $airAttachDy = $null
+$airAttachSamples = $null; $airAttachDy = $null; $airAttachDxz = $null
 $airFallGravity = $null; $airReleaseVy = $null; $airFallFrames = $null
 $aBomb = @($bomb | Where-Object { $_.n -ge $nAirset -and
                                   ($null -eq $nBlastA2 -or $_.n -lt $nBlastA2) })
-$aPy = @{}; $player | Where-Object { $_.n -ge $nAirset } |
-    ForEach-Object { $aPy[$_.n] = $_.y }
+$aPy = @{}; $aP = @{}
+$player | Where-Object { $_.n -ge $nAirset } |
+    ForEach-Object { $aPy[$_.n] = $_.y; $aP[$_.n] = $_ }
 if ($aBomb.Count -ge 6) {
     # attached prefix: bombY - playerY holds the birth offset (within 0.5)
     $dy0 = $aBomb[0].y - $aPy[$aBomb[0].n]
@@ -235,6 +236,16 @@ if ($aBomb.Count -ge 6) {
     }
     $airAttachSamples = $att            # birth row INCLUDED
     $airAttachDy = [math]::Round($dy0, 1)
+    # ... and how far AHEAD the hands hold it: mean bomb<->player XZ gap over
+    # the attach prefix (the hands are in front of the body)
+    $dxzs = @(); for ($i = 0; $i -lt $att; $i++) {
+        $b = $aBomb[$i]
+        if ($aP.ContainsKey($b.n)) { $p = $aP[$b.n]
+            $dxzs += [math]::Sqrt(($b.x-$p.x)*($b.x-$p.x) + ($b.z-$p.z)*($b.z-$p.z)) }
+    }
+    if ($dxzs.Count -gt 0) {
+        $airAttachDxz = [math]::Round(($dxzs | Measure-Object -Average).Average, 1)
+    }
     # falling: per-frame Y deltas from the first post-attach sample to rest
     $fallD = @()
     for ($i = $att; $i -lt $aBomb.Count; $i++) {
@@ -377,6 +388,7 @@ $goldens = [ordered]@{
     bomb_stand_xz_gap      = $standGap
     airset_attach_samples  = $airAttachSamples
     airset_attach_dy       = $airAttachDy
+    airset_attach_dxz      = $airAttachDxz
     airset_release_vy      = $airReleaseVy
     airset_fall_gravity    = $airFallGravity
     airset_fall_frames     = $airFallFrames

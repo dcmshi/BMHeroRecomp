@@ -567,9 +567,15 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         const ArenaBomb* fb = &g_state.bombs[fbi];
         if (fb->state != BSTATE_FALLING) continue;
         if (g_log) {
-            std::fprintf(g_log, "[fallarc] t%u bi=%d y=%.4f py=%.4f attach=%d\n",
+            /* dxz = bomb<->owner XZ gap (sim units): during attach it is the
+             * hands-forward offset (v21, golden airset_attach_dxz); after
+             * release it drifts with the owner and means nothing. */
+            float dx = qf(fb->pos.x - g_state.players[fb->owner].pos.x);
+            float dz = qf(fb->pos.z - g_state.players[fb->owner].pos.z);
+            std::fprintf(g_log, "[fallarc] t%u bi=%d y=%.4f py=%.4f dxz=%.4f attach=%d\n",
                          g_state.tick, fbi, (double)qf(fb->pos.y),
                          (double)qf(g_state.players[fb->owner].pos.y),
+                         (double)std::sqrt(dx * dx + dz * dz),
                          (int)fb->attach);
             std::fflush(g_log);
         }
