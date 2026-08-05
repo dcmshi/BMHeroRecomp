@@ -30,6 +30,11 @@
   "bomb_stand_lift": 0.0,
   "bomb_stand_supported": false,
   "bomb_stand_xz_gap": 30.0,
+  "airset_attach_samples": 8,
+  "airset_attach_dy": 50.0,
+  "airset_release_vy": 0.0,
+  "airset_fall_gravity": 2.0,
+  "airset_fall_frames": 16,
   "set_place_offset": 30.0,
   "bomb_rest_lift": 30.0,
   "bomb_rest_from": "setR",
@@ -42,8 +47,8 @@
     "fun / overall feel"
   ],
   "provenance": {
-    "fork_commit": "b80e4c8",
-    "date": "2026-08-01",
+    "fork_commit": "e5c884b",
+    "date": "2026-08-04",
     "level": 0
   }
 }

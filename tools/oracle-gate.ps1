@@ -1,5 +1,5 @@
 # Assert the ARENA build matches the single-player goldens (tools\oracle\goldens.json).
-# Seventeen FAIL-able assertions; every expected value comes from the GAME, not a
+# Eighteen FAIL-able assertions; every expected value comes from the GAME, not a
 # constant we chose (trap #1: a gate that asserts your own assumption cannot fail).
 # Falsify it with `$env:ARENA_SET_ANIM = '3'` - the soak launches inherit this
 # shell's env, so the gate must go red.
@@ -282,6 +282,50 @@ if (-not (Test-Path $kdPath)) {
           $(if ($why.Count) { $why -join '; ' }
             else { "$adCount verbs compared: $($adPass.Count) passed, $($adKnown.Count) known-divergent, 0 unexpected" })
 }
+
+# --- check 18 (task #18): the air-set FALL ARC matches the vanilla goldens ----
+# The sim's falling bomb, logged per tick by [fallarc] (post-tick), from the
+# same mode-12 boot as checks 7-10. First it RIDES the setter's hands - the
+# leading rows sit at the golden hand offset (airset_attach_dy) and there are
+# exactly airset_attach_samples of them (the release row logs attach=0 while
+# still AT the offset, so offset rows are the unit, not attach>0 rows). Then
+# it free-falls: the per-tick delta sequence is an arithmetic series whose
+# step is the golden gravity (Hero units = sim x120) starting from REST (the
+# first delta is exactly one gravity step - airset_release_vy 0). The golden
+# fall_frames is NOT asserted: it is scenario-bound (vanilla released from a
+# different height); the LAW pins the arc, the duration follows from height.
+$fa = @($m12 | Select-String '\[fallarc\] t(\d+) bi=(\d+) y=([-\d.]+) py=([-\d.]+) attach=(\d+)' |
+       ForEach-Object { [pscustomobject]@{
+           t  = [int]$_.Matches[0].Groups[1].Value
+           bi = [int]$_.Matches[0].Groups[2].Value
+           y  = [double]$_.Matches[0].Groups[3].Value
+           py = [double]$_.Matches[0].Groups[4].Value } })
+if ($fa.Count -ge 8) {
+    # first episode: contiguous ticks on one bomb index
+    $ep = [System.Collections.Generic.List[object]]::new(); $ep.Add($fa[0])
+    for ($i = 1; $i -lt $fa.Count; $i++) {
+        if ($fa[$i].bi -eq $ep[0].bi -and $fa[$i].t -eq $ep[$ep.Count-1].t + 1) { $ep.Add($fa[$i]) } else { break }
+    }
+    # riding prefix: rows at the golden hand offset (+-1 Hero)
+    $att = 0
+    foreach ($r in $ep) {
+        if ([math]::Abs(($r.y - $r.py) * 120.0 - $g.airset_attach_dy) -le 1.0) { $att++ } else { break }
+    }
+    # fall: consecutive y deltas after the riding prefix, in Hero units
+    $fd = @(); for ($i = $att; $i -lt $ep.Count; $i++) { $fd += (($ep[$i].y - $ep[$i-1].y) * 120.0) }
+    $gravOK = $false; $vyOK = $false; $gFit = $null; $v0 = $null
+    if ($fd.Count -ge 4) {
+        $g2 = @(); for ($i = 1; $i -lt $fd.Count; $i++) { $g2 += ($fd[$i-1] - $fd[$i]) }
+        $gFit = [math]::Round(($g2 | Measure-Object -Average).Average, 3)
+        $v0   = [math]::Round($fd[0] + $gFit, 3)
+        $gravOK = [math]::Abs($gFit - $g.airset_fall_gravity) -le 0.05
+        $vyOK   = [math]::Abs($v0   - $g.airset_release_vy)   -le 0.05
+    }
+    $attOK = ($att -eq $g.airset_attach_samples)
+    Check "airset fall arc == goldens" ($attOK -and $gravOK -and $vyOK) `
+          ("attach {0} rows (golden {1}); g={2} (golden {3}); v0={4} (golden {5}); {6} fall rows" -f `
+           $att, $g.airset_attach_samples, $gFit, $g.airset_fall_gravity, $v0, $g.airset_release_vy, $fd.Count)
+} else { Check "airset fall arc == goldens" $false "no [fallarc] episode in mode-12 log ($($fa.Count) lines)" }
 
 if ($fails) { Write-Host "`n[oracle-gate] FAILED: $($fails -join ', ')"; exit 1 }
 Write-Host "`n[oracle-gate] ALL GREEN"; exit 0

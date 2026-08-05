@@ -527,6 +527,25 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_render_dz  = qf(after.z - before.z) * g_scale_z;
     g_render_yaw = (float)g_state.players[0].yaw * (360.0f / 65536.0f);
 
+    /* [fallarc] (task #18): every FALLING air-set bomb, post-tick. attach is
+     * the sim's remaining hands-ride count (the release row logs 0 while the
+     * bomb is still at the hand offset - count offset rows, not attach rows,
+     * when comparing against the goldens' sample count). The oracle-gate
+     * fits the fall gravity from consecutive y deltas and checks the attach
+     * count/offset against the vanilla airset_* goldens. Sparse: lines exist
+     * only while a bomb is mid-drop. */
+    for (int fbi = 0; fbi < ARENA_MAX_BOMBS; fbi++) {
+        const ArenaBomb* fb = &g_state.bombs[fbi];
+        if (fb->state != BSTATE_FALLING) continue;
+        if (g_log) {
+            std::fprintf(g_log, "[fallarc] t%u bi=%d y=%.4f py=%.4f attach=%d\n",
+                         g_state.tick, fbi, (double)qf(fb->pos.y),
+                         (double)qf(g_state.players[fb->owner].pos.y),
+                         (int)fb->attach);
+            std::fflush(g_log);
+        }
+    }
+
     /* AIRSET tail (round 9): when the airset window is about to expire while
      * the sim is still airborne, hand the body back to the JUMP clip for the
      * rest of the arc - vanilla does exactly this, and nobody else will (the

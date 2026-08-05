@@ -209,6 +209,46 @@ $player = $lines | Select-String '\[oracle-player\] n=(\d+) slot=\d+ state=(\d+)
                                         y = [double]$_.Matches[0].Groups[4].Value
                                         z = [double]$_.Matches[0].Groups[5].Value } }
 
+# AIR-SET FALL ARC (#18): the mid-jump R-set bomb, from birth to rest. The
+# vanilla bomb RIDES THE HANDS first (bombY - playerY constant while the player
+# still rises), releases with ZERO vertical velocity (the first fall delta is
+# exactly one gravity step), then falls at the BOMB's own gravity - the second
+# difference of the falling Y - which is NOT the player's gravity. Each piece
+# becomes a golden so the arena's falling-set can be gated against numbers
+# nobody chose. The landing delta is a partial step (the floor clamp), so the
+# gravity fit excludes the last delta.
+$nBlastA2 = $blast | Where-Object { $_ -gt $nAirset } | Select-Object -First 1
+$airAttachSamples = $null; $airAttachDy = $null
+$airFallGravity = $null; $airReleaseVy = $null; $airFallFrames = $null
+$aBomb = @($bomb | Where-Object { $_.n -ge $nAirset -and
+                                  ($null -eq $nBlastA2 -or $_.n -lt $nBlastA2) })
+$aPy = @{}; $player | Where-Object { $_.n -ge $nAirset } |
+    ForEach-Object { $aPy[$_.n] = $_.y }
+if ($aBomb.Count -ge 6) {
+    # attached prefix: bombY - playerY holds the birth offset (within 0.5)
+    $dy0 = $aBomb[0].y - $aPy[$aBomb[0].n]
+    $att = 0
+    foreach ($b in $aBomb) {
+        if ($aPy.ContainsKey($b.n) -and
+            [math]::Abs(($b.y - $aPy[$b.n]) - $dy0) -lt 0.5) { $att++ } else { break }
+    }
+    $airAttachSamples = $att            # birth row INCLUDED
+    $airAttachDy = [math]::Round($dy0, 1)
+    # falling: per-frame Y deltas from the first post-attach sample to rest
+    $fallD = @()
+    for ($i = $att; $i -lt $aBomb.Count; $i++) {
+        $d = $aBomb[$i].y - $aBomb[$i - 1].y
+        if ([math]::Abs($d) -lt 0.25) { break }              # at rest
+        $fallD += $d
+    }
+    if ($fallD.Count -ge 3) {
+        $airFallFrames = $fallD.Count
+        $g2 = @(); for ($i = 1; $i -lt $fallD.Count - 1; $i++) { $g2 += ($fallD[$i-1] - $fallD[$i]) }
+        $airFallGravity = [math]::Round(($g2 | Measure-Object -Average).Average, 2)
+        $airReleaseVy   = [math]::Round($fallD[0] + $airFallGravity, 2)
+    }
+}
+
 # ---- round 9 extractions ----------------------------------------------------
 # CARRY-WALK: the clip while holding B AND moving, and whether its frame counter
 # ADVANCES (round 9: the arena froze the feet). Baseline = the carry idle from
@@ -334,6 +374,11 @@ $goldens = [ordered]@{
     bomb_stand_lift        = $standLift
     bomb_stand_supported   = $standSupported
     bomb_stand_xz_gap      = $standGap
+    airset_attach_samples  = $airAttachSamples
+    airset_attach_dy       = $airAttachDy
+    airset_release_vy      = $airReleaseVy
+    airset_fall_gravity    = $airFallGravity
+    airset_fall_frames     = $airFallFrames
     set_place_offset       = $setPlaceOffset
     bomb_rest_lift         = $restLift
     bomb_rest_from         = $restFrom
