@@ -264,6 +264,10 @@ extern "C" void arena_export_contain_vely(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void arena_export_push_entry_on(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_push_entry_on());
 }
+/* Puppet-mesh slice: ARENA_PUPPET_MESH=0 restores the bomb placeholders. */
+extern "C" void arena_export_puppet_mesh_on(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram; _return(ctx, arena_puppet_mesh_on());
+}
 
 /* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {

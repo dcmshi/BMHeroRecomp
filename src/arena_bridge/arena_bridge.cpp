@@ -519,6 +519,20 @@ extern "C" int arena_push_entry_on(void) {
     return on ? 1 : 0;
 }
 
+/* Puppet-mesh slice (2026-08-04, the 8.5b live lead resolved): puppets 1-3
+ * spawn the REAL bomber mesh (file 1 cfg 0x13) and bind its anims through
+ * the player's own offset table D_80115808 into the SAME file - the Mirror
+ * Room's copy-bomber (ED210.c func_800FBCB0) is the in-engine proof of the
+ * recipe. ARENA_PUPPET_MESH=0 restores the bomb placeholders (one-binary
+ * A/B, 8.18 rule). */
+extern "C" int arena_puppet_mesh_on(void) {
+    static const int on = []() {
+        const char* v = std::getenv("ARENA_PUPPET_MESH");
+        return (v && v[0] == '0') ? 0 : 1;
+    }();
+    return on;
+}
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();

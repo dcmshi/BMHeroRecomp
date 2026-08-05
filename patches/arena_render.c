@@ -121,6 +121,7 @@ DECLARE_FUNC(s32,  arena_export_latched_buttons);
 DECLARE_FUNC(s32,  arena_export_contain_state, s32 cur);
 DECLARE_FUNC(s32,  arena_export_contain_vely, s32 velybits, s32 correcting);
 DECLARE_FUNC(s32,  arena_export_push_entry_on);  /* task #29: ARENA_PUSH_ENTRY=1 = vanilla push entry in battle */
+DECLARE_FUNC(s32,  arena_export_puppet_mesh_on); /* bomber-mesh puppets; =0 restores bomb placeholders */
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -813,53 +814,51 @@ void arena_render_routine(void) {
              * Spawn-once latch is now "player-1 slot not yet assigned" (puppet_ready
              * no longer gates the spawn — it means "origin captured" now). */
             s32 i;
+            /* THE REAL BOMBER (2026-08-04, the 8.5b live lead resolved in
+             * three boots):
+             *  - cfg 0x13 (the MENU context's section index) is out of range
+             *    for the in-level file 1 -> func_80010408 returns NULL ->
+             *    func_8001191C AVs (boot 1 died between dbg 40 and 41).
+             *  - the registry route is closed: gObjInfo's player entry is
+             *    NULL even at the first routine call (boot 2, dbg 35/36 = 0)
+             *    - the roster only exists in the frontend, where the player
+             *    loader (2BF00.c:588) originally ran.
+             *  - but the player's LIVE model slot records the source it was
+             *    loaded from (func_8001BD44: D_80165290[slot].unk0 = src),
+             *    and the source is SELF-DESCRIBING: +4 = section count,
+             *    +0xC = inline 12-byte section entries, type (+0) == 1 =
+             *    the skeletal model (func_80010408's switch). The type-1
+             *    section's INDEX is the cfg, found at runtime - nothing
+             *    transcribed, nothing to go stale. Anims bind through
+             *    D_80115808 into the same file - proven in-arena by every
+             *    player-0 pose since 8.23.
+             * Fail-open: any guard failing = bomb placeholder, never a
+             * crash. ARENA_PUPPET_MESH=0 restores the placeholders. */
+            s32 mesh_cfg = -1;
+            if (arena_export_puppet_mesh_on()) {
+                s32 pslot = gObjects[0].Unk140[0];
+                struct UnkInputStruct80010408* hdr = NULL;
+                if (pslot >= 0)
+                    hdr = (struct UnkInputStruct80010408*) D_80165290[pslot].unk0;
+                if (hdr != NULL) {
+                    s32 n = (s32) hdr->unk4;
+                    s32 k;
+                    for (k = 0; k < n && k < 64; k++)
+                        if (hdr->unkC[k].unk0 == 1) { mesh_cfg = k; break; }
+                    arena_export_dbg_u32(45, ((u32)n << 16) | (u16)(s16)mesh_cfg);
+                    arena_export_dbg_u32(46, (u32)hdr);
+                    arena_export_dbg_u32(47, (u32)gFileArray[1].ptr);
+                    /* the spawner loads gFileArray[info.unk4].ptr WHOLE, so
+                     * the recipe only holds if the player's src IS file 1 */
+                    if ((u32)hdr != (u32)gFileArray[1].ptr) mesh_cfg = -1;
+                }
+            }
             for (i = 1; i < 4; i++) {   /* players 1-3 */
                 struct ObjSpawnInfo info;
-                s32 bomber_id;   /* A1.2d: picked gObjInfo entry, -1 = none */
-                info.unk0 = 0; info.unk2 = OBJ_TOBIRA1_O;
-                /* default to the bomb placeholder; the i==1 branch below upgrades
-                 * it to a bomber entry if a populated one exists */
-                info.unk4 = 9; info.unk6 = 0;
+                info.unk0 = 0; info.unk2 = OBJ_TOBIRA1_O;   /* inert door class */
                 info.unk7 = 0; info.unk8 = 0; info.unk9 = 0; info.unkA = 0;
-                if (i == 1) {   /* A1.2d spike: player 1 = real bomber. Candidate
-                                 * gObjInfo entries scanned null-safe (many entries
-                                 * have unk38 == NULL — deref of a null/non-KSEG0
-                                 * pointer is a HOST access violation in recomp'd
-                                 * code, crash 2026-07-22). unk2 stays the door
-                                 * objID — the NPC behaviour is unwanted. */
-                    s32 cand[4];
-                    s32 k;
-                    cand[0] = OBJ_MIR_BOMBER; cand[1] = OBJ_EVBOMBER;
-                    cand[2] = OBJ_EVS_BOM;    cand[3] = OBJ_BOMBER7;
-                    bomber_id = -1;
-                    for (k = 0; k < 4; k++) {
-                        u32 si = (u32) gObjInfo[cand[k]].unk38;
-                        u32 ap = (u32) gObjInfo[cand[k]].animPtr;
-                        arena_export_dbg_u32(50 + k, si);   /* spawn-info ptr */
-                        arena_export_dbg_u32(60 + k, ap);   /* anim table ptr */
-                        if (bomber_id < 0 && si != 0 && ap != 0)
-                            bomber_id = cand[k];
-                    }
-                    arena_export_dbg_u32(43, (u32)bomber_id);   /* the pick (-1 = none) */
-                    if (bomber_id >= 0) {
-                        struct ObjSpawnInfo* bi = gObjInfo[bomber_id].unk38;
-                        info.unk0 = bi->unk0; info.unk4 = bi->unk4; info.unk6 = bi->unk6;
-                        info.unk7 = bi->unk7; info.unk8 = bi->unk8; info.unk9 = bi->unk9;
-                        info.unkA = bi->unkA;
-                        arena_export_dbg_u32(44, ((u32)bi->unk0 << 16) | (u16)bi->unk4); /* part|file */
-                    }
-                    /* Registry empty => puppet stays a bomb. A1.2d verdict: the
-                     * bomber MESH is resident (file 1 cfg 0x13) but its ANIMS are
-                     * not reachable in the arena — the menu stream table
-                     * D_80115F34 is garbage in-level (hdr count 0x6080A, file 1
-                     * byte-identical across NITROS_1/MIRROR_ROOM), gObjInfo is
-                     * empty in every warpable arena, and the modelTag has no
-                     * embedded anims (func_8001191C AVs on the null-source bind,
-                     * dump 2026-07-22). Drawing the mesh without an anim instance
-                     * white-screens (A1.2b). Future lead: player 0 ANIMATES here,
-                     * so valid bomber anim data IS resident via the player path —
-                     * trace gPlayerObject's anim-instance bind. */
-                }
+                if (mesh_cfg >= 0) { info.unk4 = 1; info.unk6 = mesh_cfg; }
+                else               { info.unk4 = 9; info.unk6 = 0; }   /* bomb */
                 {
                     s32 slot = func_80027464(1, &info,
                                              gPlayerObject->Pos.x,
@@ -867,24 +866,14 @@ void arena_render_routine(void) {
                                              gPlayerObject->Pos.z, 0.0f);
                     arena_export_dbg_u32(40, (u32)slot);   /* per-puppet spawn slot */
                     if (slot >= 0) {
-                        if (i == 1 && bomber_id >= 0) {
-                            /* Bind model-anim + texanim exactly as the game's own
-                             * generic binder does (func_8002BE04): per-objID gObjInfo
-                             * tables, null-guarded. */
-                            void* ap  = gObjInfo[bomber_id].animPtr;
-                            void* ms  = gObjInfo[bomber_id].moveSpeed;
-                            s32   prt = gObjInfo[bomber_id].unk38->unk0;
-                            if (ap != NULL) {
-                                func_8001C0EC(slot, prt, 0,
-                                              gObjInfo[bomber_id].unk38->unk4, (u32*)ap);
-                                arena_export_dbg_u32(41, 0);
-                            }
-                            if (ms != NULL) {
-                                func_8001ABF4(slot, 0, prt, (struct UnkStruct8016C298_1*)ms);
-                                arena_export_dbg_u32(42, 0);
-                            }
+                        if (mesh_cfg >= 0) {
+                            /* anim-instance bind, the player/Mirror-Bomber
+                             * way (idle 0); without an instance the skeletal
+                             * draw white-screens (A1.2b) */
+                            func_8001C0EC(slot, 0, 0, 1, (u32*)D_80115808);
+                            arena_export_dbg_u32(41, 0);
                         } else {
-                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bind anim */
+                            func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bomb texanim */
                         }
                     }
                     arena_export_puppet_set_slot(i, slot);
