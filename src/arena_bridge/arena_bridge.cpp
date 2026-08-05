@@ -110,6 +110,13 @@ namespace {
      * transition - which is why carryrel never needed this. -1 = no tail. */
     int g_ground_tail_idx = -1;
 
+    /* windupwalk: was the previous tick already charged+moving? Entry-edge
+     * memory for the windmill->charge-run transition clip; reset on release
+     * (the carry driver stops running the moment held_bomb clears, so the
+     * reset has to live outside it or a SECOND charge-walk in the same boot
+     * silently loses its transition). */
+    bool g_chargewalk_prev = false;
+
     /* Task #30: pending [verb] names (poll side enqueues via arena_verb_mark,
      * tick_input flushes with the consumption tick - see the comment on
      * arena_verb_mark below). */
@@ -317,6 +324,28 @@ static int arena_windupwalk_anim_index(void) {
         return 28;
     }();
     return idx;
+}
+/* WINDUP->CHARGE-RUN transition (task: windupwalk, the last register entry):
+ * vanilla does not cut straight from the windmill to the charge-run - the
+ * windupwalk timeline is [26,3][27,4][28,53], a 4-frame transition clip (27)
+ * bridging them. Driven on the ENTRY edge into charged+moving; the shown
+ * length is budget - 2 (the carry roller re-latches at 2), so the default
+ * budget is the golden 4 + 2. 0 disables (falsification knob). */
+static int arena_winduptrans_anim_index(void) {
+    static const int idx = []() {
+        const char* v = std::getenv("ARENA_WINDUP_TRANS_ANIM");
+        if (v) { int n = std::atoi(v); if (n >= -1 && n < 64) return n; }
+        return 27;
+    }();
+    return idx;
+}
+static int arena_winduptrans_frames(void) {
+    static const int n = []() {
+        const char* v = std::getenv("ARENA_WINDUP_TRANS_FRAMES");
+        if (v) { int k = std::atoi(v); if (k >= 0 && k <= 120) return k; }
+        return 6;
+    }();
+    return n;
 }
 /* CARRY-JUMP clip (round 11): vanilla jumps while carrying (carry_jump_allowed
  * true) and rides the arc on its own clip - 20, not the grounded carry idle
@@ -652,6 +681,7 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         float cvz    = qf(g_state.players[0].vel.z);
         bool  moving = (cvx * cvx + cvz * cvz) >= 0.0025f;
         int want;
+        bool chargewalk = false;
         if (g_state.players[0].pos.y > 0)
             /* round 11: the carried JUMP rides its own clip (vanilla 20) -
              * this played the grounded carry idle through the whole arc.
@@ -659,21 +689,34 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
              * the windup threshold MID-JUMP is an unmeasured corner, and the
              * airborne clip is the one the eye tracks. */
             want = arena_carryjump_anim_index();
-        else if (timer >= arena_windup_start_frames())
+        else if (timer >= arena_windup_start_frames()) {
             /* round 10: the windmill (26) has static legs - while MOVING the
              * charged carry needs a walking clip or the feet freeze */
+            chargewalk = moving;
             want = moving ? arena_windupwalk_anim_index() : arena_windup_anim_index();
+        }
         else
             want = moving ? arena_carrywalk_anim_index()
                           : arena_carryidle_anim_index();
-        if (want >= 0) {
+        if (chargewalk && !g_chargewalk_prev
+            && arena_winduptrans_anim_index() >= 0
+            && arena_winduptrans_frames() > 2) {
+            /* ENTRY into charged+moving: vanilla's 4-frame transition clip
+             * (windupwalk timeline [26,3][27,4][28,53]) before the charge-run.
+             * The block is skipped while this budget (>2) runs down - which is
+             * exactly what lets the clip finish before 28 re-latches. */
+            g_pose_anim   = arena_winduptrans_anim_index();
+            g_pose_frames = arena_winduptrans_frames();
+        } else if (want >= 0) {
             g_pose_anim   = want;
             g_pose_frames = 2;   /* survives this frame's dbg_anim decrement, so
                                   * next frame's walker gate still drops the
                                   * broken 41 re-trigger; closes 1 frame after
                                   * release so the walker's own throw clip lands */
         }
+        g_chargewalk_prev = chargewalk;
     }
+    if (!g_state.players[0].held_bomb) g_chargewalk_prev = false;
 
     /* JUMP pose driver (task #30). The visible arc flies the sim's Y, but the
      * clips rode the walker's own mini-hop - a 4-tick clip 6 in some boots,

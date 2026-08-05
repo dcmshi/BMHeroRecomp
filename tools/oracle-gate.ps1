@@ -239,7 +239,7 @@ $AD_MIN_VERBS = @($vsOracle | Where-Object { $vsBattle -contains $_ }).Count
 # line whenever a verb is added or a registered divergence is fixed - the gate
 # goes red in that direction too (a RISE above the floor is fine, >=), so the
 # constant cannot silently overstate coverage, only understate it.
-$AD_MIN_PASS_RUNS = 18
+$AD_MIN_PASS_RUNS = 20
 $adScript = Join-Path $root "tools\anim-diff.ps1"
 $kdPath   = Join-Path $root "tools\oracle\known-divergences.json"
 # $ErrorActionPreference is Stop for this script; 2>&1 on a child process turns

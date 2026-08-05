@@ -78,6 +78,13 @@ static const VerbRow kBattleScript[] = {
     { "carryrel",  225,   0, 0,       0 },   /* 25t after the walk: flies clear */
     { "holdlong",  250, 110, VERB_B,  0 },   /* stops before the 120t spread */
     { "windupwalk",318,  20, 0,      -1 },   /* charged (hold+68) and moving */
+    /* Battle-only window CLOSER: vanilla's windupwalk sticks for 60t where
+     * this one stops at 20t - beyond that the input streams DIVERGE (vanilla
+     * still running, battle decelerating into the windmill), so the compared
+     * window must end where the shared input does. Same device as postjump.
+     * With it (plus the bridge's 27-transition) windupwalk is a live
+     * assertion; the register entry is gone. */
+    { "windupstop",338,   0, 0,       0 },
     { "holdrel",   360,   0, 0,       0 },   /* battle-only: 22t after the walk */
     { "carryjump", 385,  32, VERB_B,  0 },
     { "jumpB",     395,   3, VERB_A,  0 },
