@@ -276,6 +276,15 @@ extern "C" void arena_export_puppet_mesh_on(uint8_t* rdram, recomp_context* ctx)
     (void)rdram; _return(ctx, arena_puppet_mesh_on());
 }
 
+/* Puppet clip drive (spec 2026-08-05 Parts B/C): the chooser's verdict, and the
+ * spawn block's "this puppet got the bomber anim bind" mark. */
+extern "C" void arena_export_puppet_anim(uint8_t* rdram, recomp_context* ctx) {
+    _return(ctx, arena_puppet_anim(_arg<0, int>(rdram, ctx)));
+}
+extern "C" void arena_export_puppet_bound(uint8_t* rdram, recomp_context* ctx) {
+    arena_puppet_bound(_arg<0, int>(rdram, ctx));
+}
+
 /* Single-player oracle (spec 2026-08-01). Floats cross as BIT PATTERNS. */
 extern "C" void arena_export_oracle_mode(uint8_t* rdram, recomp_context* ctx) {
     (void)rdram; _return(ctx, arena_oracle_mode());

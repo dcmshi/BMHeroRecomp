@@ -533,6 +533,39 @@ extern "C" int arena_puppet_mesh_on(void) {
     return on;
 }
 
+/* Puppet clip chooser (spec 2026-08-05 Part B): a PURE function of the sim
+ * player's state - no edges, no windows (those stay player-0 pose-window
+ * territory). Clip indices are the measured vanilla vocabulary
+ * (tools/oracle/timelines.json): idle 0, run 3, jump 6 (rising) / 7 (falling),
+ * carry 14/17/20, hit = the same clip player 0 uses. -1 is reserved for DEAD
+ * (patch hides the actor); a disabled hit clip falls back to 0, never to -1.
+ * -2 = leave the spawn bind alone: knob off, puppet never bomber-bound, or
+ * bad index. ARENA_PUPPET_ANIM=0 restores the 8.40 hold-idle behaviour
+ * (one-binary A/B, 8.18 rule). Lives out here, not with the other clip
+ * getters inside the anonymous namespace, because an extern "C" export needs
+ * external linkage; arena_hit_anim_index is file-static and visible from here. */
+static bool g_puppet_bound[ARENA_MAX_PLAYERS] = { false, false, false, false };
+extern "C" void arena_puppet_bound(int i) {
+    if (i >= 1 && i < ARENA_MAX_PLAYERS) g_puppet_bound[i] = true;
+}
+extern "C" int arena_puppet_anim(int i) {
+    static const int on = []() {
+        const char* v = std::getenv("ARENA_PUPPET_ANIM");
+        return (v && v[0] == '0') ? 0 : 1;
+    }();
+    if (!on || i < 1 || i >= ARENA_MAX_PLAYERS || !g_puppet_bound[i]) return -2;
+    const ArenaPlayer* p = &g_state.players[i];
+    const int held = (p->held_bomb != 0);
+    switch (p->state) {
+    case PSTATE_IDLE:   return held ? 14 : 0;
+    case PSTATE_RUN:    return held ? 17 : 3;
+    case PSTATE_JUMP:   return held ? 20 : ((p->vel.y > 0) ? 6 : 7);
+    case PSTATE_TUMBLE: { const int h = arena_hit_anim_index(); return (h >= 0) ? h : 0; }
+    case PSTATE_DEAD:   return -1;
+    default:            return -2;
+    }
+}
+
 extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     g_routine_seen = true;
     ensure_init();
@@ -576,7 +609,10 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
         uint32_t c = g_state.tick % 600u;
         int run  = (c >= 180u && c < 420u) ? 1 : 0;
         int jump = (c >= 420u && c < 428u) ? 1 : 0;
-        in[1] = arena_input_pack(0, run ? 32 : 0, jump, 0, 0);
+        /* sy is NEGATIVE forward in this pipeline (the poll's stick sign) - a
+         * positive sy walked puppet 1 into the wall 2u behind it and RUN died
+         * after ~19 ticks ([pstate] st=1 -> st=0 relapse, 2026-08-05). */
+        in[1] = arena_input_pack(0, run ? -32 : 0, jump, 0, 0);
     }
     arena_tick(&g_state, in);
     /* [pstate]: sim-state edges for players 1-3 - the probe surface that says

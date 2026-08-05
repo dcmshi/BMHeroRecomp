@@ -114,6 +114,8 @@ int   arena_contain_player_state(int cur);  /* walker PUSH(42) -> last non-push 
 int   arena_contain_player_vely(int velybits, int correcting); /* + last non-push Vel.y */
 int   arena_push_entry_on(void);  /* 1 iff ARENA_PUSH_ENTRY=1: vanilla push entry in battle (A/B) */
 int   arena_puppet_mesh_on(void); /* 1 unless ARENA_PUPPET_MESH=0: bomber-mesh puppets vs bomb placeholders */
+int   arena_puppet_anim(int i);   /* clip for puppet i; -1 hide, -2 leave alone */
+void  arena_puppet_bound(int i);  /* mark puppet i bomber-bound (spawn block) */
 /* Single-player oracle (spec 2026-08-01): ARENA_ORACLE=1 boots VANILLA
  * campaign with per-frame probes; goldens are extracted from the log.
  * Native owns all gating/throttling and the shared frame counter n; the

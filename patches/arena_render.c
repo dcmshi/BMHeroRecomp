@@ -123,6 +123,8 @@ DECLARE_FUNC(s32,  arena_export_contain_state, s32 cur);
 DECLARE_FUNC(s32,  arena_export_contain_vely, s32 velybits, s32 correcting);
 DECLARE_FUNC(s32,  arena_export_push_entry_on);  /* task #29: ARENA_PUSH_ENTRY=1 = vanilla push entry in battle */
 DECLARE_FUNC(s32,  arena_export_puppet_mesh_on); /* bomber-mesh puppets; =0 restores bomb placeholders */
+DECLARE_FUNC(s32,  arena_export_puppet_anim, s32 i);   /* per-state puppet clip; -1 hide, -2 leave alone */
+DECLARE_FUNC(void, arena_export_puppet_bound, s32 i);  /* puppet i got the bomber anim bind */
 DECLARE_FUNC(void, arena_export_oracle_frame, s32 level, s32 playerValid, s32 floorYbits, s32 playerYbits);
 DECLARE_FUNC(void, arena_export_oracle_anim, s32 idx, s32 framebits, s32 state);
 DECLARE_FUNC(void, arena_export_oracle_obj, s32 slot_state, s32 xbits, s32 ybits, s32 zbits);
@@ -872,6 +874,11 @@ void arena_render_routine(void) {
                              * way (idle 0); without an instance the skeletal
                              * draw white-screens (A1.2b) */
                             func_8001C0EC(slot, 0, 0, 1, (u32*)D_80115808);
+                            /* only a bomber-bound puppet has the player anim
+                             * vocabulary; the bomb-placeholder branch stays
+                             * unmarked and the chooser returns -2 for it, so
+                             * its texanim is never touched (spec Part B). */
+                            arena_export_puppet_bound(i);
                             arena_export_dbg_u32(41, 0);
                         } else {
                             func_8001ABF4(slot, 0, 0, D_801163DC_ADDR);   /* bomb texanim */
@@ -939,14 +946,24 @@ void arena_render_routine(void) {
                     gObjects[slot].Pos.z       = arena_export_puppet_wz(i);
                     gObjects[slot].Rot.y       = py;
                     gObjects[slot].actionState = ACTION_IDLE;
-                    /* Anim evidence (spec 2026-08-05 Part A): live idx+frame
-                     * per frame; -3 = no anim instance on this slot (the
-                     * fail-open tag - logged, never silent). */
-                    if (gObjects[slot].Unk140[0] >= 0)
+                    /* Clip drive (spec 2026-08-05 Part C): trigger the funnel
+                     * ONLY on change; the engine owns the frames (walker-gate
+                     * principle). -1 = dead -> hidden (overrides this frame's
+                     * ACTION_IDLE write above; respawn un-hides automatically).
+                     * -2 = leave the spawn bind alone (knob off / unbound).
+                     * -3 in [panim] = no anim instance: fail-open, logged. */
+                    if (gObjects[slot].Unk140[0] >= 0) {
+                        s32 want = arena_export_puppet_anim(i);
+                        if (want == -1) {
+                            gObjects[slot].actionState = ACTION_NONE;
+                        } else if (want >= 0 && func_8001B880(slot, 0) != want) {
+                            func_8001C0EC(slot, 0, want, 1, (u32*)D_80115808);
+                        }
                         arena_export_dbg_panim(i, func_8001B880(slot, 0),
                                                fbits(func_8001B62C(slot, 0)));
-                    else
+                    } else {
                         arena_export_dbg_panim(i, -3, 0);
+                    }
                 }
             }
         }
