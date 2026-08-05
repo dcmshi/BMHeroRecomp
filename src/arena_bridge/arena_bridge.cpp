@@ -564,7 +564,34 @@ extern "C" void arena_bridge_tick_input(int sx, int sy, int buttons) {
     ArenaInput neutral = arena_input_pack(0, 0, 0, 0, 0);
     ArenaInput in[ARENA_MAX_PLAYERS] = { neutral, neutral, neutral, neutral };
     in[0] = arena_input_pack(sx, sy, buttons & 1, (buttons >> 1) & 1, (buttons >> 2) & 1);
+    /* Probe bot (spec 2026-08-05): ARENA_PUPPET_BOT=1 drives player 1 on a
+     * canned 600-tick cycle (idle / run forward / jump tap / idle) so soak
+     * gates can assert clip transitions. Inputs only - the sim's legitimate
+     * interface - and default OFF: every existing probe and netplay sees a
+     * byte-identical input stream. */
+    static const bool bot = []() {
+        const char* v = std::getenv("ARENA_PUPPET_BOT");
+        return v && v[0] == '1'; }();
+    if (bot) {
+        uint32_t c = g_state.tick % 600u;
+        int run  = (c >= 180u && c < 420u) ? 1 : 0;
+        int jump = (c >= 420u && c < 428u) ? 1 : 0;
+        in[1] = arena_input_pack(0, run ? 32 : 0, jump, 0, 0);
+    }
     arena_tick(&g_state, in);
+    /* [pstate]: sim-state edges for players 1-3 - the probe surface that says
+     * the bot MOVED the sim (independent of any anim plumbing above it). */
+    {
+        static uint8_t prev_st[ARENA_MAX_PLAYERS] = { 255, 255, 255, 255 };
+        for (int pi = 1; pi < ARENA_MAX_PLAYERS; pi++) {
+            if (g_state.players[pi].state != prev_st[pi]) {
+                prev_st[pi] = g_state.players[pi].state;
+                if (g_log) { std::fprintf(g_log, "[pstate] p%d st=%d t%u\n",
+                                          pi, (int)prev_st[pi],
+                                          g_state.tick); std::fflush(g_log); }
+            }
+        }
+    }
     Vec3q after = g_state.players[0].pos;
     g_render_dx  = qf(after.x - before.x) * g_scale;
     g_render_dz  = qf(after.z - before.z) * g_scale_z;
