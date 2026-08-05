@@ -106,6 +106,7 @@ extern s32 func_8001B880(s32 objId, s32 part);    /* live anim index (unk14) */
 extern f32 func_8001B62C(s32 objId, s32 part);    /* live anim frame counter (unk24) */
 DECLARE_FUNC(s32,  arena_export_set_new, s32 i);           /* 1 once per player-i set edge */
 DECLARE_FUNC(void, arena_export_dbg_anim, s32 idx, s32 frame, s32 state);  /* anim idx+frame+actionState */
+DECLARE_FUNC(void, arena_export_dbg_panim, s32 i, s32 idx, s32 framebits); /* puppet anim idx+frame (f32 BITS) */
 
 /* ---- Single-player oracle (ARENA_ORACLE=1; spec 2026-08-01) ------------ */
 /* Native owns all gating/throttling and the shared line counter; the patch
@@ -938,6 +939,14 @@ void arena_render_routine(void) {
                     gObjects[slot].Pos.z       = arena_export_puppet_wz(i);
                     gObjects[slot].Rot.y       = py;
                     gObjects[slot].actionState = ACTION_IDLE;
+                    /* Anim evidence (spec 2026-08-05 Part A): live idx+frame
+                     * per frame; -3 = no anim instance on this slot (the
+                     * fail-open tag - logged, never silent). */
+                    if (gObjects[slot].Unk140[0] >= 0)
+                        arena_export_dbg_panim(i, func_8001B880(slot, 0),
+                                               fbits(func_8001B62C(slot, 0)));
+                    else
+                        arena_export_dbg_panim(i, -3, 0);
                 }
             }
         }

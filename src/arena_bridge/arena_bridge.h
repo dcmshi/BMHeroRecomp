@@ -60,6 +60,7 @@ int   arena_blastactor_get_slot(int i);
 /* A1.4 set-bomb animation (patch-callable). */
 int   arena_set_new(int i);              /* 1 once per player-i set-bomb edge */
 void  arena_dbg_anim(int idx, int frame, int state);  /* anim idx+frame+actionState */
+void  arena_dbg_panim(int i, int idx, int framebits); /* [panim]/[pframe]; framebits = f32 bits */
 /* Explosion visual evidence: one line per blast->actor drive frame (bounded by
  * TUNE_BLAST_TTL per blast). wr crosses as a float BIT PATTERN. */
 void  arena_dbg_blast(int k, int slot, int wrbits);

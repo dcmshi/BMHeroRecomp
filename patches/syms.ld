@@ -136,3 +136,4 @@ arena_export_contain_state = 0x8F000264;
 arena_export_contain_vely = 0x8F000268;
 arena_export_push_entry_on = 0x8F00026C;
 arena_export_puppet_mesh_on = 0x8F000270;
+arena_export_dbg_panim = 0x8F000274;

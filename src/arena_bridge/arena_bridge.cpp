@@ -1387,6 +1387,32 @@ extern "C" void arena_dbg_anim(int idx, int frame, int state) {
     }
 }
 
+/* Puppet anim evidence (spec 2026-08-05 Parts A/E): the patch reports each
+ * puppet's live anim (idx, frame) once per frame. Two channels, both bounded:
+ * [panim] on idx CHANGE for every puppet (rare; idx=-3 = the patch found no
+ * anim instance - the unconditional failure tag), and [pframe], a 10-frame
+ * burst for puppet 1 after each change. 10 frames stays inside one clip loop
+ * so a -Rising gate on the capture group is honest (a wrap would re-enter
+ * low values and break monotonicity). frame crosses as float BITS. */
+extern "C" void arena_dbg_panim(int i, int idx, int framebits) {
+    static int last_idx[ARENA_MAX_PLAYERS] = { -1, -1, -1, -1 };
+    static int burst = 0;
+    union { int i; float f; } fb; fb.i = framebits;
+    if (i < 1 || i >= ARENA_MAX_PLAYERS) return;
+    if (idx != last_idx[i]) {
+        last_idx[i] = idx;
+        if (i == 1) burst = 10;
+        if (g_log) { std::fprintf(g_log, "[panim] p%d idx=%d st=%d t%u\n",
+                                  i, idx, (int)g_state.players[i].state,
+                                  g_state.tick); std::fflush(g_log); }
+    }
+    if (i == 1 && burst > 0) {
+        burst--;
+        if (g_log) { std::fprintf(g_log, "[pframe] p1 idx=%d f=%d\n",
+                                  idx, (int)fb.f); std::fflush(g_log); }
+    }
+}
+
 /* Explosion visual evidence: the patch reports every blast->actor drive frame
  * ([blastvis]), so the soak can assert both that a detonation DREW something
  * and that its radius GREW (-Rising on the wr integer part). Bounded output:

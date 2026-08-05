@@ -183,6 +183,13 @@ extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx) {
                    _arg<2, int>(rdram, ctx));
 }
 
+/* Puppet anim evidence ([panim]/[pframe]). The frame counter is a float BIT
+ * PATTERN in arg 2 (the export ABI takes no float arguments). */
+extern "C" void arena_export_dbg_panim(uint8_t* rdram, recomp_context* ctx) {
+    arena_dbg_panim(_arg<0, int>(rdram, ctx), _arg<1, int>(rdram, ctx),
+                    _arg<2, int>(rdram, ctx));
+}
+
 /* Explosion visual: blast->actor drive evidence ([blastvis]). Radius is a float
  * BIT PATTERN in arg 2 (the export ABI takes no float arguments). */
 extern "C" void arena_export_dbg_blast(uint8_t* rdram, recomp_context* ctx) {

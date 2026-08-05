@@ -86,6 +86,7 @@ extern "C" void arena_export_blastactor_get_slot(uint8_t* rdram, recomp_context*
 extern "C" void arena_export_blast_new(uint8_t* rdram, recomp_context* ctx);
 extern "C" void arena_export_set_new(uint8_t* rdram, recomp_context* ctx);        // A1.4 set-anim edge
 extern "C" void arena_export_dbg_anim(uint8_t* rdram, recomp_context* ctx);       // A1.4 anim-state probe log
+extern "C" void arena_export_dbg_panim(uint8_t* rdram, recomp_context* ctx);      // puppet anim evidence ([panim]/[pframe])
 extern "C" void arena_export_dbg_cam(uint8_t* rdram, recomp_context* ctx);        // A1.5 camera probe log
 extern "C" void arena_export_floor_guard(uint8_t* rdram, recomp_context* ctx);    // A1.2g floor guard
 extern "C" void arena_export_floor_last_x(uint8_t* rdram, recomp_context* ctx);
@@ -1188,6 +1189,7 @@ int main(int argc, char** argv) {
     REGISTER_FUNC(arena_export_blast_wz);
     REGISTER_FUNC(arena_export_set_new);
     REGISTER_FUNC(arena_export_dbg_anim);
+    REGISTER_FUNC(arena_export_dbg_panim);
     REGISTER_FUNC(arena_export_dbg_blast);
     REGISTER_FUNC(arena_export_latched_buttons);
     REGISTER_FUNC(arena_export_contain_state);
